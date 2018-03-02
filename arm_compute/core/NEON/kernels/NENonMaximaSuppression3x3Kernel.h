@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -39,6 +39,10 @@ class ITensor;
 class NENonMaximaSuppression3x3Kernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NENonMaximaSuppression3x3Kernel";
+    }
     /** Default constructor */
     NENonMaximaSuppression3x3Kernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -78,12 +82,16 @@ protected:
     ITensor                *_output; /**< Destination tensor */
 };
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 /** NEON kernel to perform Non-Maxima suppression 3x3 with intermediate results in F16 if the input data type is F32
  */
 class NENonMaximaSuppression3x3FP16Kernel : public NENonMaximaSuppression3x3Kernel
 {
 public:
+    const char *name() const override
+    {
+        return "NENonMaximaSuppression3x3FP16Kernel";
+    }
     /** Initialise the kernel's sources, destinations and border mode.
      *
      * @param[in]  input            Source tensor. Data types supported: U8/F32.
@@ -92,8 +100,8 @@ public:
      */
     void configure(const ITensor *input, ITensor *output, bool border_undefined);
 };
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 using NENonMaximaSuppression3x3FP16Kernel = NENonMaximaSuppression3x3Kernel;
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 } // namespace arm_compute
 #endif /* _ARM_COMPUTE_NENONMAXIMASUPPRESSION3x3KERNEL_H__ */

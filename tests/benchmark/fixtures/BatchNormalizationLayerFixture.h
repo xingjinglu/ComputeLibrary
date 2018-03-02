@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -40,7 +40,7 @@ class BatchNormalizationLayerFixture : public framework::Fixture
 {
 public:
     template <typename...>
-    void setup(TensorShape tensor_shape, TensorShape param_shape, float epsilon, DataType data_type, int batches)
+    void setup(TensorShape tensor_shape, TensorShape param_shape, float epsilon, ActivationLayerInfo act_info, DataType data_type, int batches)
     {
         // Set batched in source and destination shapes
         const unsigned int fixed_point_position = 4;
@@ -55,7 +55,7 @@ public:
         gamma    = create_tensor<TensorType>(param_shape, data_type, 1, fixed_point_position);
 
         // Create and configure function
-        batch_norm_layer.configure(&src, &dst, &mean, &variance, &beta, &gamma, epsilon);
+        batch_norm_layer.configure(&src, &dst, &mean, &variance, &beta, &gamma, epsilon, act_info);
 
         // Allocate tensors
         src.allocator()->allocate();
@@ -64,18 +64,17 @@ public:
         variance.allocator()->allocate();
         beta.allocator()->allocate();
         gamma.allocator()->allocate();
-
-        // Fill tensors
-        library->fill_tensor_uniform(Accessor(src), 0);
-        library->fill_tensor_uniform(Accessor(mean), 1);
-        library->fill_tensor_uniform(Accessor(variance), 2);
-        library->fill_tensor_uniform(Accessor(beta), 3);
-        library->fill_tensor_uniform(Accessor(gamma), 4);
     }
 
     void run()
     {
         batch_norm_layer.run();
+    }
+
+    void sync()
+    {
+        sync_if_necessary<TensorType>();
+        sync_tensor_if_necessary<TensorType>(dst);
     }
 
     void teardown()

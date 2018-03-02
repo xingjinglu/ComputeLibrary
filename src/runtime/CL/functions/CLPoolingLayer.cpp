@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -23,19 +23,34 @@
  */
 #include "arm_compute/runtime/CL/functions/CLPoolingLayer.h"
 
+#include "arm_compute/core/CL/ICLTensor.h"
 #include "arm_compute/core/CL/kernels/CLPoolingLayerKernel.h"
+#include "arm_compute/runtime/CL/CLScheduler.h"
 #include "support/ToolchainSupport.h"
 
 using namespace arm_compute;
 
 void CLPoolingLayer::configure(ICLTensor *input, ICLTensor *output, const PoolingLayerInfo &pool_info)
 {
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input);
+
     // Configure pooling kernel
     auto k = arm_compute::support::cpp14::make_unique<CLPoolingLayerKernel>();
+    k->set_target(CLScheduler::get().target());
     k->configure(input, output, pool_info);
     _kernel = std::move(k);
 
-    // Configure border depending on operation required
+    // Configure border depending on operation required (quantize border in case of asymmetric data_type)
     BorderMode border_mode = (PoolingType::MAX == pool_info.pool_type()) ? BorderMode::REPLICATE : BorderMode::CONSTANT;
-    _border_handler.configure(input, _kernel->border_size(), border_mode, PixelValue(0));
+    PixelValue zero_value(0.f);
+    if(is_data_type_quantized_asymmetric(input->info()->data_type()) && !pool_info.exclude_padding())
+    {
+        zero_value = PixelValue(static_cast<uint32_t>(input->info()->quantization_info().offset));
+    }
+    _border_handler.configure(input, _kernel->border_size(), border_mode, zero_value);
+}
+
+Status CLPoolingLayer::validate(const ITensorInfo *input, const ITensorInfo *output, const PoolingLayerInfo &pool_info)
+{
+    return CLPoolingLayerKernel::validate(input, output, pool_info);
 }

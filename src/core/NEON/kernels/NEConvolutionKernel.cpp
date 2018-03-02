@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -627,16 +627,17 @@ void NEConvolutionKernel<matrix_size>::run(const Window &window, const ThreadInf
     ARM_COMPUTE_ERROR_ON_UNCONFIGURED_KERNEL(this);
     ARM_COMPUTE_ERROR_ON_INVALID_SUBWINDOW(INEKernel::window(), window);
 
-    switch(_output->info()->format())
+    switch(_output->info()->data_type())
     {
-        case Format::U8:
+        case DataType::U8:
             convolution<uint8_t>(window);
             break;
-        case Format::S16:
+        case DataType::S16:
             convolution<int16_t>(window);
             break;
         default:
-            ARM_COMPUTE_ERROR("Not supported");
+            ARM_COMPUTE_ERROR("Not supported Data type!");
+            break;
     }
 }
 
@@ -1455,8 +1456,8 @@ void NEConvolutionRectangleKernel::configure(const ITensor *input, ITensor *outp
     constexpr unsigned int num_elems_read_per_iteration      = 16;
     constexpr unsigned int num_elems_written_per_iteration   = 8;
 
-    Window                 win           = calculate_max_window(*input->info(), Steps(num_elems_processed_per_iteration), border_undefined, _border_size);
-    AccessWindowHorizontal output_access = AccessWindowHorizontal(output->info(), 0, num_elems_written_per_iteration);
+    Window                 win = calculate_max_window(*input->info(), Steps(num_elems_processed_per_iteration), border_undefined, _border_size);
+    AccessWindowHorizontal output_access(output->info(), 0, num_elems_written_per_iteration);
 
     update_window_and_padding(win,
                               AccessWindowRectangle(input->info(), -_border_size.left, -_border_size.top, num_elems_read_per_iteration, height),
@@ -1521,13 +1522,13 @@ void NEConvolutionRectangleKernel::run(const Window &window, const ThreadInfo &i
     };
 
     // Run appropriate function
-    switch(_output->info()->format())
+    switch(_output->info()->data_type())
     {
-        case Format::U8:
+        case DataType::U8:
             ARM_COMPUTE_ERROR_ON(_func_idx >= func_table_u8.size());
             (this->*func_table_u8[_func_idx])(window);
             break;
-        case Format::S16:
+        case DataType::S16:
             ARM_COMPUTE_ERROR_ON(_func_idx >= func_table_s16.size());
             (this->*func_table_s16[_func_idx])(window);
             break;

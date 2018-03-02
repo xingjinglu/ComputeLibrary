@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -38,6 +38,10 @@ class ITensor;
 class NETransposeKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NETransposeKernel";
+    }
     /** Default constructor */
     NETransposeKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -53,10 +57,18 @@ public:
 
     /** Initialise the kernel's input and output.
      *
-     * @param[in]  input  Input tensor. Data types supported: U8/S8/QS8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in]  input  Input tensor. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
      * @param[out] output Output tensor. Data type supported: Same as @p input
      */
     void configure(const ITensor *input, ITensor *output);
+    /** Static function to check if given info will lead to a valid configuration of @ref NETransposeKernel
+     *
+     * @param[in] input  Input tensor. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in] output Output tensor. Data type supported: Same as @p input
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;

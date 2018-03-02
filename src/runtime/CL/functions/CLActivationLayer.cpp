@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -24,6 +24,7 @@
 #include "arm_compute/runtime/CL/functions/CLActivationLayer.h"
 
 #include "arm_compute/core/CL/kernels/CLActivationLayerKernel.h"
+#include "arm_compute/core/Types.h"
 #include "support/ToolchainSupport.h"
 
 using namespace arm_compute;
@@ -33,4 +34,9 @@ void CLActivationLayer::configure(ICLTensor *input, ICLTensor *output, Activatio
     auto k = arm_compute::support::cpp14::make_unique<CLActivationLayerKernel>();
     k->configure(input, output, act_info);
     _kernel = std::move(k);
+}
+
+Status CLActivationLayer::validate(const ITensorInfo *input, const ITensorInfo *output, const ActivationLayerInfo &act_info)
+{
+    return CLActivationLayerKernel::validate(input, output, act_info);
 }

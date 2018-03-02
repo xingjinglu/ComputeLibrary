@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -29,13 +29,15 @@
 #include "arm_compute/core/TensorShape.h"
 #include "arm_compute/core/Types.h"
 #include "arm_compute/core/Utils.h"
+#include "arm_compute/core/utils/misc/ICloneable.h"
+#include "arm_compute/core/utils/misc/utility.h"
 
 #include <cstddef>
 
 namespace arm_compute
 {
 /** Store the tensor's metadata */
-class ITensorInfo
+class ITensorInfo : public misc::ICloneable<ITensorInfo>
 {
 public:
     /** Default virtual destructor */
@@ -45,15 +47,19 @@ public:
      * @warning This resets the format to UNKNOWN.
      *
      * @param[in] data_type The new data type.
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_data_type(DataType data_type) = 0;
+    virtual ITensorInfo &set_data_type(DataType data_type) = 0;
     /** Set the number of channels to the specified value.
      *
      * @warning This resets the format to UNKNOWN.
      *
      * @param[in] num_channels New number of channels.
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_num_channels(int num_channels) = 0;
+    virtual ITensorInfo &set_num_channels(int num_channels) = 0;
     /** Set the format of an already initialized tensor.
      *
      * @note If the data type has already been configured (i.e. not UNKNOWN) it
@@ -61,23 +67,41 @@ public:
      * be based on the format.
      *
      * @param[in] format Single-plane format of the tensor.
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_format(Format format) = 0;
+    virtual ITensorInfo &set_format(Format format) = 0;
     /** Set the shape of an already initialized tensor.
      *
      * @warning Changing the shape requires to recompute the strides and is
      * therefore only possible if the tensor hasn't been allocated yet.
      *
      * @param[in] shape New tensor shape.
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_tensor_shape(TensorShape shape) = 0;
+    virtual ITensorInfo &set_tensor_shape(const TensorShape &shape) = 0;
     /** Set the fixed point position to the specified value
      *
      * @warning The fixed point position must be set once the data type has been configured
      *
      * @param[in] fixed_point_position The new fixed point position
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_fixed_point_position(int fixed_point_position) = 0;
+    virtual ITensorInfo &set_fixed_point_position(int fixed_point_position) = 0;
+    /** Set the quantization settings (scale and offset) of the tensor.
+     *
+     * @param[in] quantization_info QuantizationInfo containing the scale and offset
+     *
+     * @return Reference to this ITensorInfo object
+     */
+    virtual ITensorInfo &set_quantization_info(const QuantizationInfo &quantization_info) = 0;
+    /** Resets the padding settings of the tensor.
+    *
+    * @return Reference to this ITensorInfo object
+    */
+    virtual ITensorInfo &reset_padding() = 0;
     /** Update the offset to the first element and the strides to automatically computed values.
      *
      * @note The padding used by this method is really conservative so that the tensor can be used for most functions.
@@ -178,8 +202,10 @@ public:
     /** Set the flag whether the tensor size can be changed.
      *
      * @param[in] is_resizable Flag that marks the tensor if it can be changed or not.
+     *
+     * @return Reference to this ITensorInfo object
      */
-    virtual void set_is_resizable(bool is_resizable) = 0;
+    virtual ITensorInfo &set_is_resizable(bool is_resizable) = 0;
     /** Valid region of the tensor. All elements in the valid region have defined values, i.e. are not undefined.
      *
      * @return The valid region.
@@ -189,7 +215,58 @@ public:
      *
      * @param[in] valid_region Valid region to set.
      */
-    virtual void set_valid_region(ValidRegion valid_region) = 0;
+    virtual void set_valid_region(const ValidRegion &valid_region) = 0;
+
+    /** Get the quantization settings (scale and offset) of the tensor.
+    *
+    * @return A QuantizationInfo containing the scale and offset.
+    */
+    virtual QuantizationInfo quantization_info() const = 0;
+
+    /** If infos are broadcast compatible tensor info's, return the broadcasted shape and the intersection of
+     * the broadcasted valid regions of the tensors.
+     *
+     * Two tensor info's are broadcast compatible if their shapes are broadcast compatible.
+     *
+     * Two tensor shapes are broadcast compatible if for each dimension, they're equal or one of them is 1.
+     *
+     * If two shapes are compatible, each dimension in the broadcasted shape is the max of the original dimensions.
+     *
+     * @param[in] infos Tensor info's.
+     *
+     * @return The broadcasted shape and valid region, or an empty shape and valid region if the info's are
+     * not broadcast compatible.
+     */
+    template <typename... Infos>
+    static std::pair<TensorShape, ValidRegion> broadcast_shape_and_valid_region(const Infos &... infos)
+    {
+        TensorShape bc_shape = TensorShape::broadcast_shape(infos.tensor_shape()...);
+        ValidRegion bc_valid_region{ Coordinates(), bc_shape };
+
+        auto broadcast_valid_region = [&bc_valid_region](const ITensorInfo & info)
+        {
+            if(info.num_dimensions() != 0)
+            {
+                for(size_t d = 0; d < bc_valid_region.shape.num_dimensions(); ++d)
+                {
+                    const bool is_broadcast = (info.tensor_shape()[d] == 1);
+
+                    const int    anchor_max = std::max(bc_valid_region.anchor[d], info.valid_region().anchor[d]);
+                    const size_t valid_min  = std::min(bc_valid_region.shape[d], info.valid_region().shape[d]);
+
+                    if(!is_broadcast || (valid_min == 0))
+                    {
+                        bc_valid_region.anchor.set(d, anchor_max);
+                        bc_valid_region.shape.set(d, valid_min);
+                    }
+                }
+            }
+        };
+
+        utility::for_each(broadcast_valid_region, infos...);
+
+        return std::pair<TensorShape, ValidRegion>(bc_shape, bc_valid_region);
+    }
 };
 }
 #endif /*__ARM_COMPUTE_TENSORINFO_H__ */

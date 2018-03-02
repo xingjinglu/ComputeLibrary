@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -66,17 +66,17 @@ public:
 protected:
     /** function to perform warp affine or warp perspective on the given window when border mode == UNDEFINED
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     virtual void warp_undefined(const Window &window) = 0;
     /** function to perform warp affine or warp perspective on the given window when border mode == CONSTANT
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     virtual void warp_constant(const Window &window) = 0;
     /** function to perform warp affine or warp perspective on the given window when border mode == REPLICATE
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     virtual void warp_replicate(const Window &window) = 0;
     /** Common signature for all the specialised warp functions
@@ -98,6 +98,10 @@ template <InterpolationPolicy interpolation>
 class NEWarpAffineKernel : public INEWarpKernel
 {
 private:
+    const char *name() const override
+    {
+        return "NEWarpAffineKernel";
+    }
     // Inherited methods overridden:
     void warp_undefined(const Window &window) override;
     void warp_constant(const Window &window) override;
@@ -111,6 +115,10 @@ template <InterpolationPolicy interpolation>
 class NEWarpPerspectiveKernel : public INEWarpKernel
 {
 private:
+    const char *name() const override
+    {
+        return "NEWarpPerspectiveKernel";
+    }
     // Inherited methods overridden:
     void warp_undefined(const Window &window) override;
     void warp_constant(const Window &window) override;

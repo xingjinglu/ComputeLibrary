@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -35,6 +35,10 @@ class ITensor;
 class NEArithmeticAdditionKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEArithmeticAdditionKernel";
+    }
     /** Default constructor */
     NEArithmeticAdditionKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -68,9 +72,20 @@ public:
      * @param[in]  policy Overflow policy.
      */
     void configure(const ITensor *input1, const ITensor *input2, ITensor *output, ConvertPolicy policy);
+    /** Static function to check if given info will lead to a valid configuration of @ref NEArithmeticAdditionKernel
+     *
+     * @param[in] input1 An input tensor. Data types supported: U8/QS8/QS16/S16/F16/F32
+     * @param[in] input2 An input tensor. Data types supported: U8/QS8/QS16/S16/F16/F32
+     * @param[in] output The output tensor. Data types supported: U8/QS8/QS16/S16/F16/F32.
+     * @param[in] policy Overflow policy.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input1, const ITensorInfo *input2, const ITensorInfo *output, ConvertPolicy policy);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;
+    BorderSize border_size() const override;
 
 private:
     /** Common signature for all the specialised add functions

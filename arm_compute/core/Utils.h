@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016, 2017, 2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -25,6 +25,7 @@
 #define __ARM_COMPUTE_UTILS_H__
 
 #include "arm_compute/core/Error.h"
+#include "arm_compute/core/Rounding.h"
 #include "arm_compute/core/Types.h"
 
 #include <algorithm>
@@ -39,12 +40,19 @@
 
 namespace arm_compute
 {
+/** Calculate the rounded up quotient of val / m. */
+template <typename S, typename T>
+constexpr auto DIV_CEIL(S val, T m) -> decltype((val + m - 1) / m)
+{
+    return (val + m - 1) / m;
+}
+
 /** Computes the smallest number larger or equal to value that is a multiple of divisor. */
 template <typename S, typename T>
 inline auto ceil_to_multiple(S value, T divisor) -> decltype(((value + divisor - 1) / divisor) * divisor)
 {
     ARM_COMPUTE_ERROR_ON(value < 0 || divisor <= 0);
-    return ((value + divisor - 1) / divisor) * divisor;
+    return DIV_CEIL(value, divisor) * divisor;
 }
 
 /** Computes the largest number smaller or equal to value that is a multiple of divisor. */
@@ -53,13 +61,6 @@ inline auto floor_to_multiple(S value, T divisor) -> decltype((value / divisor) 
 {
     ARM_COMPUTE_ERROR_ON(value < 0 || divisor <= 0);
     return (value / divisor) * divisor;
-}
-
-/** Calculate the rounded up quotient of val / m. */
-template <typename S, typename T>
-constexpr auto DIV_CEIL(S val, T m) -> decltype((val + m - 1) / m)
-{
-    return (val + m - 1) / m;
 }
 
 /** Returns the arm_compute library build information
@@ -92,6 +93,7 @@ inline size_t data_size_from_type(DataType data_type)
         case DataType::U8:
         case DataType::S8:
         case DataType::QS8:
+        case DataType::QASYMM8:
             return 1;
         case DataType::U16:
         case DataType::S16:
@@ -166,6 +168,7 @@ inline size_t element_size_from_data_type(DataType dt)
         case DataType::S8:
         case DataType::U8:
         case DataType::QS8:
+        case DataType::QASYMM8:
             return 1;
         case DataType::U16:
         case DataType::S16:
@@ -234,9 +237,25 @@ inline int plane_idx_from_channel(Format format, Channel channel)
 {
     switch(format)
     {
+        // Single planar formats have a single plane
+        case Format::U8:
+        case Format::U16:
+        case Format::S16:
+        case Format::U32:
+        case Format::S32:
+        case Format::F16:
+        case Format::F32:
+        case Format::UV88:
+        case Format::RGB888:
+        case Format::RGBA8888:
+        case Format::YUYV422:
+        case Format::UYVY422:
+            return 0;
+        // Multi planar formats
         case Format::NV12:
         case Format::NV21:
         {
+            // Channel U and V share the same plane of format UV88
             switch(channel)
             {
                 case Channel::Y:
@@ -260,6 +279,131 @@ inline int plane_idx_from_channel(Format format, Channel channel)
                     return 1;
                 case Channel::V:
                     return 2;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        default:
+            ARM_COMPUTE_ERROR("Not supported format");
+            return 0;
+    }
+}
+
+/** Return the channel index of a given channel given an input format.
+ *
+ * @param[in] format  Input format
+ * @param[in] channel Input channel
+ *
+ * @return The channel index of the specific channel of the specific format
+ */
+inline int channel_idx_from_format(Format format, Channel channel)
+{
+    switch(format)
+    {
+        case Format::RGB888:
+        {
+            switch(channel)
+            {
+                case Channel::R:
+                    return 0;
+                case Channel::G:
+                    return 1;
+                case Channel::B:
+                    return 2;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::RGBA8888:
+        {
+            switch(channel)
+            {
+                case Channel::R:
+                    return 0;
+                case Channel::G:
+                    return 1;
+                case Channel::B:
+                    return 2;
+                case Channel::A:
+                    return 3;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::YUYV422:
+        {
+            switch(channel)
+            {
+                case Channel::Y:
+                    return 0;
+                case Channel::U:
+                    return 1;
+                case Channel::V:
+                    return 3;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::UYVY422:
+        {
+            switch(channel)
+            {
+                case Channel::Y:
+                    return 1;
+                case Channel::U:
+                    return 0;
+                case Channel::V:
+                    return 2;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::NV12:
+        {
+            switch(channel)
+            {
+                case Channel::Y:
+                    return 0;
+                case Channel::U:
+                    return 0;
+                case Channel::V:
+                    return 1;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::NV21:
+        {
+            switch(channel)
+            {
+                case Channel::Y:
+                    return 0;
+                case Channel::U:
+                    return 1;
+                case Channel::V:
+                    return 0;
+                default:
+                    ARM_COMPUTE_ERROR("Not supported channel");
+                    return 0;
+            }
+        }
+        case Format::YUV444:
+        case Format::IYUV:
+        {
+            switch(channel)
+            {
+                case Channel::Y:
+                    return 0;
+                case Channel::U:
+                    return 0;
+                case Channel::V:
+                    return 0;
                 default:
                     ARM_COMPUTE_ERROR("Not supported channel");
                     return 0;
@@ -344,15 +488,74 @@ inline size_t num_channels_from_format(Format format)
     }
 }
 
+/** Return the promoted data type of a given data type.
+ *
+ * @note If promoted data type is not supported an error will be thrown
+ *
+ * @param[in] dt Data type to get the promoted type of.
+ *
+ * @return Promoted data type
+ */
+inline DataType get_promoted_data_type(DataType dt)
+{
+    switch(dt)
+    {
+        case DataType::U8:
+            return DataType::U16;
+        case DataType::S8:
+            return DataType::S16;
+        case DataType::QS8:
+            return DataType::QS16;
+        case DataType::U16:
+            return DataType::U32;
+        case DataType::S16:
+            return DataType::S32;
+        case DataType::QS16:
+            return DataType::QS32;
+        case DataType::QASYMM8:
+        case DataType::F16:
+        case DataType::U32:
+        case DataType::S32:
+        case DataType::F32:
+        case DataType::QS32:
+            ARM_COMPUTE_ERROR("Unsupported data type promotions!");
+        default:
+            ARM_COMPUTE_ERROR("Undefined data type!");
+    }
+    return DataType::UNKNOWN;
+}
+
+/** Return true if the given format has horizontal subsampling.
+ *
+ * @param[in] format Format to determine subsampling.
+ *
+ * @return True if the format can be subsampled horizontaly.
+ */
+inline bool has_format_horizontal_subsampling(Format format)
+{
+    return (format == Format::YUYV422 || format == Format::UYVY422 || format == Format::NV12 || format == Format::NV21 || format == Format::IYUV || format == Format::UV88) ? true : false;
+}
+
+/** Return true if the given format has vertical subsampling.
+ *
+ * @param[in] format Format to determine subsampling.
+ *
+ * @return True if the format can be subsampled verticaly.
+ */
+inline bool has_format_vertical_subsampling(Format format)
+{
+    return (format == Format::NV12 || format == Format::NV21 || format == Format::IYUV || format == Format::UV88) ? true : false;
+}
+
 /** Separate a 2D convolution into two 1D convolutions
-*
-* @param[in]  conv     2D convolution
-* @param[out] conv_col 1D vertical convolution
-* @param[out] conv_row 1D horizontal convolution
-* @param[in]  size     Size of the 2D convolution
-*
-* @return true if the separation was successful
-*/
+ *
+ * @param[in]  conv     2D convolution
+ * @param[out] conv_col 1D vertical convolution
+ * @param[out] conv_row 1D horizontal convolution
+ * @param[in]  size     Size of the 2D convolution
+ *
+ * @return true if the separation was successful
+ */
 inline bool separate_matrix(const int16_t *conv, int16_t *conv_col, int16_t *conv_row, uint8_t size)
 {
     int32_t min_col     = -1;
@@ -449,6 +652,68 @@ TensorShape calculate_depth_concatenate_shape(const std::vector<T *> &inputs_vec
     out_shape.set(2, depth);
 
     return out_shape;
+}
+
+/** Adjust tensor shape size if width or height are odd for a given multi-planar format. No modification is done for other formats.
+ *
+ * @note Adding here a few links discussing the issue of odd size and sharing the same solution:
+ *       Android Source: https://android.googlesource.com/platform/frameworks/base/+/refs/heads/master/graphics/java/android/graphics/YuvImage.java
+ *       WebM: https://groups.google.com/a/webmproject.org/forum/#!topic/webm-discuss/LaCKpqiDTXM
+ *       libYUV: https://bugs.chromium.org/p/libyuv/issues/detail?id=198&can=1&q=odd%20width
+ *       YUVPlayer: https://sourceforge.net/p/raw-yuvplayer/bugs/1/
+ *
+ * @param[in, out] shape  Tensor shape of 2D size
+ * @param[in]      format Format of the tensor
+ *
+ */
+inline TensorShape adjust_odd_shape(const TensorShape &shape, Format format)
+{
+    TensorShape output{ shape };
+
+    // Force width to be even for formats which require subsampling of the U and V channels
+    if(has_format_horizontal_subsampling(format))
+    {
+        output.set(0, output.x() & ~1U);
+    }
+
+    // Force height to be even for formats which require subsampling of the U and V channels
+    if(has_format_vertical_subsampling(format))
+    {
+        output.set(1, output.y() & ~1U);
+    }
+
+    return output;
+}
+
+/** Calculate subsampled shape for a given format and channel
+ *
+ * @param[in] shape   Shape of the tensor to calculate the extracted channel.
+ * @param[in] format  Format of the tensor.
+ * @param[in] channel Channel to create tensor shape to be extracted.
+ *
+ * @return The subsampled tensor shape.
+ */
+inline TensorShape calculate_subsampled_shape(const TensorShape &shape, Format format, Channel channel = Channel::UNKNOWN)
+{
+    TensorShape output{ shape };
+
+    // Subsample shape only for U or V channel
+    if(Channel::U == channel || Channel::V == channel || Channel::UNKNOWN == channel)
+    {
+        // Subsample width for the tensor shape when channel is U or V
+        if(has_format_horizontal_subsampling(format))
+        {
+            output.set(0, output.x() / 2U);
+        }
+
+        // Subsample height for the tensor shape when channel is U or V
+        if(has_format_vertical_subsampling(format))
+        {
+            output.set(1, output.y() / 2U);
+        }
+    }
+
+    return output;
 }
 
 /** Calculate accurary required by the horizontal and vertical convolution computations
@@ -562,6 +827,46 @@ inline DataType data_type_for_convolution_matrix(const int16_t *conv, size_t siz
     }
 }
 
+/** Calculate padding requirements in case of SAME padding
+ *
+ * @param[in] input_shape   Input shape
+ * @param[in] weights_shape Weights shape
+ * @param[in] conv_info     Convolution information (containing strides)
+ *
+ * @return PadStrideInfo for SAME padding
+ */
+PadStrideInfo calculate_same_pad(TensorShape input_shape, TensorShape weights_shape, PadStrideInfo conv_info);
+
+/** Returns expected shape for the deconvolution output tensor.
+ *
+ * @param[in] out_dims widht and height of the output tensor, these values can be obtained with the function deconvolution_output_dimensions.
+ * @param[in] input    Shape of the input tensor.
+ * @param[in] weights  Shape of the weights tensor.
+ *
+ * @return Deconvolution output tensor shape.
+ */
+TensorShape deconvolution_output_shape(const std::pair<unsigned int, unsigned int> &out_dims, TensorShape input, TensorShape weights);
+
+/** Returns expected width and height of the deconvolution's output tensor.
+ *
+ * @param[in] in_width           Width of input tensor (Number of columns)
+ * @param[in] in_height          Height of input tensor (Number of rows)
+ * @param[in] kernel_width       Kernel width.
+ * @param[in] kernel_height      Kernel height.
+ * @param[in] padx               X axis padding.
+ * @param[in] pady               Y axis padding.
+ * @param[in] inner_border_right The number of zeros added to right edge of the input.
+ * @param[in] inner_border_top   The number of zeros added to top edge of the input.
+ * @param[in] stride_x           X axis input stride.
+ * @param[in] stride_y           Y axis input stride.
+ *
+ * @return A pair with the new width in the first position and the new height in the second.
+ */
+const std::pair<unsigned int, unsigned int> deconvolution_output_dimensions(unsigned int in_width, unsigned int in_height,
+                                                                            unsigned int kernel_width, unsigned int kernel_height,
+                                                                            unsigned int padx, unsigned int pady, unsigned int inner_border_right, unsigned int inner_border_top,
+                                                                            unsigned int stride_x, unsigned int stride_y);
+
 /** Returns expected width and height of output scaled tensor depending on dimensions rounding mode.
  *
  * @param[in] width           Width of input tensor (Number of columns)
@@ -674,6 +979,28 @@ inline bool is_data_type_float(DataType dt)
     }
 }
 
+/** Check if a given data type is of quantized type
+ *
+ * @note Quantized is considered a super-set of fixed-point and asymmetric data types.
+ *
+ * @param[in] dt Input data type.
+ *
+ * @return True if data type is of quantized type, else false.
+ */
+inline bool is_data_type_quantized(DataType dt)
+{
+    switch(dt)
+    {
+        case DataType::QS8:
+        case DataType::QASYMM8:
+        case DataType::QS16:
+        case DataType::QS32:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /** Check if a given data type is of fixed point type
  *
  * @param[in] dt Input data type.
@@ -687,6 +1014,23 @@ inline bool is_data_type_fixed_point(DataType dt)
         case DataType::QS8:
         case DataType::QS16:
         case DataType::QS32:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/** Check if a given data type is of asymmetric quantized type
+ *
+ * @param[in] dt Input data type.
+ *
+ * @return True if data type is of symmetric quantized type, else false.
+ */
+inline bool is_data_type_quantized_asymmetric(DataType dt)
+{
+    switch(dt)
+    {
+        case DataType::QASYMM8:
             return true;
         default:
             return false;
@@ -727,7 +1071,16 @@ void print_consecutive_elements_impl(std::ostream &s, const T *ptr, unsigned int
         {
             s.width(stream_width);
         }
-        s << std::right << static_cast<print_type>(ptr[i]) << element_delim;
+
+        if(std::is_same<typename std::decay<T>::type, half>::value)
+        {
+            // We use T instead of print_type here is because the std::is_floating_point<half> returns false and then the print_type becomes int.
+            s << std::right << static_cast<T>(ptr[i]) << element_delim;
+        }
+        else
+        {
+            s << std::right << static_cast<print_type>(ptr[i]) << element_delim;
+        }
     }
 }
 
@@ -749,7 +1102,17 @@ int max_consecutive_elements_display_width_impl(std::ostream &s, const T *ptr, u
     {
         std::stringstream ss;
         ss.copyfmt(s);
-        ss << static_cast<print_type>(ptr[i]);
+
+        if(std::is_same<typename std::decay<T>::type, half>::value)
+        {
+            // We use T instead of print_type here is because the std::is_floating_point<half> returns false and then the print_type becomes int.
+            ss << static_cast<T>(ptr[i]);
+        }
+        else
+        {
+            ss << static_cast<print_type>(ptr[i]);
+        }
+
         max_width = std::max<int>(max_width, ss.str().size());
     }
     return max_width;

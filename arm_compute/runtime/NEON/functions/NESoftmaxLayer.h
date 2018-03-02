@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -40,9 +40,9 @@ class ITensor;
  * @f[ out = \frac{e^{x - max(x)}}{\sum{e^{x - max(x)}}} @f]
  *
  * This function runs the following kernels:
+ * -# @ref NEFillBorderKernel
  * -# @ref NELogits1DMaxKernel
- * -# @ref NELogits1DShiftExpSumKernel
- * -# @ref NELogits1DNormKernel
+ * -# @ref NELogits1DSoftmaxKernel
  */
 class NESoftmaxLayer : public IFunction
 {
@@ -51,23 +51,33 @@ public:
     NESoftmaxLayer(std::shared_ptr<IMemoryManager> memory_manager = nullptr);
     /** Set the input and output tensors.
      *
-     * @param[in]  input  Source tensor. Data types supported: QS8/QS16/F16/F32.
-     * @param[out] output Destination tensor. Data types supported: same as @p input.
+     * @param[in,out] input  Source tensor. Data types supported: QASYMM8/QS8/QS16/F16/F32. If the width is not a
+     *                       multiple of the internal processing block size, @ref NEFillBorderKernel replicates the
+     *                       last value of each row to the nearest multiple.
+     * @param[out]    output Destination tensor. Data types supported: same as @p input.
+     * @param[in]     beta   (Optional) A scaling factor for the exponent. QS8/QS16 only support a beta value of 1.
      */
-    void configure(ITensor *input, ITensor *output);
+    void configure(ITensor *input, ITensor *output, float beta = 1.0f);
+    /** Static function to check if given info will lead to a valid configuration of @ref NESoftmaxLayer
+     *
+     * @param[in] input  Source tensor. Data types supported: QASYMM8/QS8/QS16/F16/F32.
+     * @param[in] output Destination tensor. Data types supported: same as @p input
+     * @param[in] beta   (Optional) A scaling factor for the exponent. QS8/QS16 only support a beta value of 1.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output, float beta = 1.0f);
 
     // Inherited methods overridden:
     void run() override;
 
 private:
-    MemoryGroup                 _memory_group;
-    NELogits1DMaxKernel         _max_kernel;
-    NELogits1DShiftExpSumKernel _shift_exp_sum_kernel;
-    NELogits1DNormKernel        _norm_kernel;
-    NEFillBorderKernel          _fill_border_kernel;
-    Tensor                      _max;
-    Tensor                      _sum;
-    Tensor                      _tmp;
+    MemoryGroup             _memory_group;
+    NELogits1DMaxKernel     _max_kernel;
+    NELogits1DSoftmaxKernel _softmax_kernel;
+    NEFillBorderKernel      _fill_border_kernel;
+    Tensor                  _max;
+    Tensor                  _tmp;
 };
 }
 #endif /* __ARM_COMPUTE_NESOFTMAXLAYER_H__ */

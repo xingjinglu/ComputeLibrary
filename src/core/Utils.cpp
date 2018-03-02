@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016, 2017, 2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -21,9 +21,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+
 #include "arm_compute/core/Utils.h"
 
 #include "arm_compute/core/FixedPoint.h"
+
+#include "support/ToolchainSupport.h"
 
 #include <algorithm>
 #include <cmath>
@@ -247,41 +250,83 @@ std::string arm_compute::lower_string(const std::string &val)
     return res;
 }
 
+PadStrideInfo arm_compute::calculate_same_pad(TensorShape input_shape, TensorShape weights_shape, PadStrideInfo conv_info)
+{
+    const auto &strides         = conv_info.stride();
+    const int   out_width       = std::ceil(float(input_shape.x()) / float(strides.first));
+    const int   out_height      = std::ceil(float(input_shape.y()) / float(strides.second));
+    const int   pad_width       = ((out_width - 1) * strides.first + weights_shape.x() - input_shape.x());
+    const int   pad_height      = ((out_height - 1) * strides.second + weights_shape.y() - input_shape.y());
+    const int   same_pad_left   = pad_width / 2;
+    const int   same_pad_top    = pad_height / 2;
+    const int   same_pad_right  = pad_width - same_pad_left;
+    const int   same_pad_bottom = pad_height - same_pad_top;
+
+    return PadStrideInfo(strides.first, strides.second, same_pad_left, same_pad_right, same_pad_top, same_pad_bottom, DimensionRoundingType::CEIL);
+}
+
+TensorShape arm_compute::deconvolution_output_shape(const std::pair<unsigned int, unsigned int> &out_dims, TensorShape input, TensorShape weights)
+{
+    TensorShape out_shape(input);
+    out_shape.set(0, out_dims.first);
+    out_shape.set(1, out_dims.second);
+    out_shape.set(2, weights[3]);
+    return out_shape;
+}
+
+const std::pair<unsigned int, unsigned int> arm_compute::deconvolution_output_dimensions(
+    unsigned int in_width, unsigned int in_height, unsigned int kernel_width, unsigned int kernel_height, unsigned int padx, unsigned int pady,
+    unsigned int inner_border_right, unsigned int inner_border_top, unsigned int stride_x, unsigned int stride_y)
+{
+    ARM_COMPUTE_ERROR_ON(in_width < 1 || in_height < 1);
+    ARM_COMPUTE_ERROR_ON(((in_width - 1) * stride_x + kernel_width + inner_border_right) < 2 * padx);
+    ARM_COMPUTE_ERROR_ON(((in_height - 1) * stride_y + kernel_height + inner_border_top) < 2 * pady);
+    const int padx_deconv = (kernel_width - padx - 1);
+    const int pady_deconv = (kernel_height - pady - 1);
+    ARM_COMPUTE_ERROR_ON(padx_deconv < 0);
+    ARM_COMPUTE_ERROR_ON(pady_deconv < 0);
+    const int w = stride_x * (in_width - 1) + kernel_width + inner_border_right - 2 * padx_deconv;
+    const int h = stride_y * (in_height - 1) + kernel_height + inner_border_top - 2 * pady_deconv;
+    return std::make_pair<unsigned int, unsigned int>(w, h);
+}
+
 const std::pair<unsigned int, unsigned int> arm_compute::scaled_dimensions(unsigned int width, unsigned int height,
                                                                            unsigned int kernel_width, unsigned int kernel_height,
                                                                            const PadStrideInfo &pad_stride_info)
 {
-    const unsigned int pad_x    = pad_stride_info.pad().first;
-    const unsigned int pad_y    = pad_stride_info.pad().second;
-    const unsigned int stride_x = pad_stride_info.stride().first;
-    const unsigned int stride_y = pad_stride_info.stride().second;
-    unsigned int       w        = 0;
-    unsigned int       h        = 0;
+    const unsigned int pad_left   = pad_stride_info.pad_left();
+    const unsigned int pad_top    = pad_stride_info.pad_top();
+    const unsigned int pad_right  = pad_stride_info.pad_right();
+    const unsigned int pad_bottom = pad_stride_info.pad_bottom();
+    const unsigned int stride_x   = pad_stride_info.stride().first;
+    const unsigned int stride_y   = pad_stride_info.stride().second;
+    unsigned int       w          = 0;
+    unsigned int       h          = 0;
     switch(pad_stride_info.round())
     {
         case DimensionRoundingType::FLOOR:
-            w = static_cast<unsigned int>(std::floor((static_cast<float>(width + 2 * pad_x - kernel_width) / stride_x) + 1));
-            h = static_cast<unsigned int>(std::floor((static_cast<float>(height + 2 * pad_y - kernel_height) / stride_y) + 1));
+            w = static_cast<unsigned int>(std::floor((static_cast<float>(width + pad_left + pad_right - kernel_width) / stride_x) + 1));
+            h = static_cast<unsigned int>(std::floor((static_cast<float>(height + pad_top + pad_bottom - kernel_height) / stride_y) + 1));
             break;
         case DimensionRoundingType::CEIL:
-            w = static_cast<unsigned int>(std::ceil((static_cast<float>(width + 2 * pad_x - kernel_width) / stride_x) + 1));
-            h = static_cast<unsigned int>(std::ceil((static_cast<float>(height + 2 * pad_y - kernel_height) / stride_y) + 1));
+            w = static_cast<unsigned int>(std::ceil((static_cast<float>(width + pad_left + pad_right - kernel_width) / stride_x) + 1));
+            h = static_cast<unsigned int>(std::ceil((static_cast<float>(height + pad_top + pad_bottom - kernel_height) / stride_y) + 1));
             break;
         default:
             ARM_COMPUTE_ERROR("Unsupported rounding type");
     }
 
     // Make sure that border operations will start from inside the input and not the padded area
-    if(((w - 1) * stride_x) >= (width + pad_x))
+    if(((w - 1) * stride_x) >= (width + pad_left))
     {
         --w;
     }
-    if(((h - 1) * stride_y) >= (height + pad_y))
+    if(((h - 1) * stride_y) >= (height + pad_top))
     {
         --h;
     }
-    ARM_COMPUTE_ERROR_ON(((w - 1) * stride_x) >= (width + pad_x));
-    ARM_COMPUTE_ERROR_ON(((h - 1) * stride_y) >= (height + pad_y));
+    ARM_COMPUTE_ERROR_ON(((w - 1) * stride_x) >= (width + pad_left));
+    ARM_COMPUTE_ERROR_ON(((h - 1) * stride_y) >= (height + pad_top));
 
     return std::make_pair(w, h);
 }
@@ -290,6 +335,7 @@ void arm_compute::print_consecutive_elements(std::ostream &s, DataType dt, const
 {
     switch(dt)
     {
+        case DataType::QASYMM8:
         case DataType::U8:
             print_consecutive_elements_impl<uint8_t>(s, ptr, n, stream_width, element_delim);
             break;
@@ -314,6 +360,7 @@ void arm_compute::print_consecutive_elements(std::ostream &s, DataType dt, const
             print_consecutive_elements_impl<float>(s, reinterpret_cast<const float *>(ptr), n, stream_width, element_delim);
             break;
         case DataType::F16:
+            print_consecutive_elements_impl<half>(s, reinterpret_cast<const half *>(ptr), n, stream_width, element_delim);
             break;
         default:
             ARM_COMPUTE_ERROR("Undefined element size for given data type");
@@ -324,6 +371,7 @@ int arm_compute::max_consecutive_elements_display_width(std::ostream &s, DataTyp
 {
     switch(dt)
     {
+        case DataType::QASYMM8:
         case DataType::U8:
             return max_consecutive_elements_display_width_impl<uint8_t>(s, ptr, n);
         case DataType::QS8:
@@ -341,8 +389,9 @@ int arm_compute::max_consecutive_elements_display_width(std::ostream &s, DataTyp
         case DataType::F32:
             return max_consecutive_elements_display_width_impl<float>(s, reinterpret_cast<const float *>(ptr), n);
         case DataType::F16:
-            return 0;
+            return max_consecutive_elements_display_width_impl<half>(s, reinterpret_cast<const half *>(ptr), n);
         default:
             ARM_COMPUTE_ERROR("Undefined element size for given data type");
     }
+    return 0;
 }

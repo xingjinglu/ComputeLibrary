@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -26,13 +26,15 @@
 #include "arm_compute/core/Error.h"
 #include "arm_compute/core/HOGInfo.h"
 #include "arm_compute/core/Helpers.h"
+#include "arm_compute/core/TensorInfo.h"
 #include "arm_compute/core/Validate.h"
+#include "support/ToolchainSupport.h"
 
 using namespace arm_compute;
 
 TensorInfo::TensorInfo()
     : _total_size(0), _fixed_point_position(0), _offset_first_element_in_bytes(0), _strides_in_bytes(), _num_channels(0), _tensor_shape(), _data_type(DataType::UNKNOWN), _format(Format::UNKNOWN),
-      _is_resizable{ true }, _valid_region{ Coordinates(), _tensor_shape }, _padding{ 0 }
+      _is_resizable{ true }, _valid_region{ Coordinates(), _tensor_shape }, _padding{ 0 }, _quantization_info()
 {
 }
 
@@ -50,6 +52,7 @@ TensorInfo::TensorInfo(const ITensorInfo &info)
     _is_resizable                  = info.is_resizable();
     _valid_region                  = info.valid_region();
     _padding                       = info.padding();
+    _quantization_info             = info.quantization_info();
 }
 
 TensorInfo::TensorInfo(Format format)
@@ -78,6 +81,13 @@ TensorInfo::TensorInfo(const TensorShape &tensor_shape, size_t num_channels, Dat
     : TensorInfo()
 {
     init(tensor_shape, num_channels, data_type, fixed_point_position);
+}
+
+TensorInfo::TensorInfo(const TensorShape &tensor_shape, size_t num_channels, DataType data_type, QuantizationInfo quantization_info)
+    : TensorInfo()
+{
+    init(tensor_shape, num_channels, data_type, 0);
+    _quantization_info = quantization_info;
 }
 
 TensorInfo::TensorInfo(const HOGInfo &hog_info, unsigned int width, unsigned int height)
@@ -149,9 +159,7 @@ void TensorInfo::init(const TensorShape &tensor_shape, size_t num_channels, Data
     _strides_in_bytes              = strides_in_bytes;
     _total_size                    = total_size_in_bytes;
 
-    Coordinates coordinates;
-    coordinates.set_num_dimensions(_tensor_shape.num_dimensions());
-    _valid_region = ValidRegion{ coordinates, _tensor_shape };
+    _valid_region = ValidRegion{ Coordinates(), _tensor_shape };
 }
 
 void TensorInfo::init(const HOGInfo &hog_info, unsigned int width, unsigned int height)
@@ -191,9 +199,7 @@ size_t TensorInfo::init_auto_padding(const TensorShape &tensor_shape, size_t num
     _format               = Format::UNKNOWN;
     _tensor_shape         = tensor_shape;
 
-    Coordinates coordinates;
-    coordinates.set_num_dimensions(_tensor_shape.num_dimensions());
-    _valid_region = ValidRegion{ coordinates, _tensor_shape };
+    _valid_region = ValidRegion{ Coordinates(), _tensor_shape };
 
     auto_padding();
 
@@ -306,19 +312,26 @@ bool TensorInfo::extend_padding(const PaddingSize &padding)
     return updated;
 }
 
-void TensorInfo::set_data_type(DataType data_type)
+std::unique_ptr<ITensorInfo> TensorInfo::clone() const
+{
+    return support::cpp14::make_unique<TensorInfo>(*this);
+}
+
+ITensorInfo &TensorInfo::set_data_type(DataType data_type)
 {
     _data_type = data_type;
     _format    = Format::UNKNOWN;
+    return *this;
 }
 
-void TensorInfo::set_num_channels(int num_channels)
+ITensorInfo &TensorInfo::set_num_channels(int num_channels)
 {
     _num_channels = num_channels;
     _format       = Format::UNKNOWN;
+    return *this;
 }
 
-void TensorInfo::set_format(Format format)
+ITensorInfo &TensorInfo::set_format(Format format)
 {
     _format = format;
 
@@ -332,9 +345,10 @@ void TensorInfo::set_format(Format format)
         ARM_COMPUTE_ERROR_ON(num_channels_from_format(format) != _num_channels);
         ARM_COMPUTE_ERROR_ON(data_type_from_format(format) != _data_type);
     }
+    return *this;
 }
 
-void TensorInfo::set_tensor_shape(TensorShape shape)
+ITensorInfo &TensorInfo::set_tensor_shape(const TensorShape &shape)
 {
     _tensor_shape                  = shape;
     _offset_first_element_in_bytes = 0;
@@ -350,16 +364,34 @@ void TensorInfo::set_tensor_shape(TensorShape shape)
         _total_size                           = _tensor_shape[idx_last_dimension] * _strides_in_bytes[idx_last_dimension];
     }
 
-    Coordinates coordinates;
-    coordinates.set_num_dimensions(_tensor_shape.num_dimensions());
-    _valid_region = ValidRegion{ coordinates, _tensor_shape };
+    std::tie(_strides_in_bytes, _offset_first_element_in_bytes, _total_size) = calculate_padding_requirements(_padding);
+
+    _valid_region = ValidRegion{ Coordinates(), _tensor_shape };
+    return *this;
 }
 
-void TensorInfo::set_fixed_point_position(int fixed_point_position)
+ITensorInfo &TensorInfo::set_fixed_point_position(int fixed_point_position)
 {
     ARM_COMPUTE_ERROR_ON(_data_type == DataType::QS8 && (fixed_point_position < 1 || fixed_point_position > 6));
     ARM_COMPUTE_ERROR_ON(_data_type == DataType::QS16 && (fixed_point_position < 1 || fixed_point_position > 14));
     _fixed_point_position = fixed_point_position;
+    return *this;
+}
+
+ITensorInfo &TensorInfo::set_quantization_info(const QuantizationInfo &quantization_info)
+{
+    _quantization_info = quantization_info;
+    return *this;
+}
+
+ITensorInfo &TensorInfo::reset_padding()
+{
+    _padding = PaddingSize();
+    if(((_format != Format::UNKNOWN) || (_data_type != DataType::UNKNOWN)) && _total_size != 0)
+    {
+        std::tie(_strides_in_bytes, _offset_first_element_in_bytes, _total_size) = calculate_padding_requirements(_padding);
+    }
+    return *this;
 }
 
 size_t TensorInfo::offset_element_in_bytes(const Coordinates &pos) const

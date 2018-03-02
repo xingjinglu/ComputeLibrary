@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -27,7 +27,7 @@
 #include "arm_compute/core/Types.h"
 #include "arm_compute/runtime/IFunction.h"
 #include "arm_compute/runtime/NEON/functions/NEArithmeticAddition.h"
-#include "arm_compute/runtime/NEON/functions/NEDepthConvert.h"
+#include "arm_compute/runtime/NEON/functions/NEDepthConvertLayer.h"
 #include "arm_compute/runtime/NEON/functions/NEScale.h"
 #include "arm_compute/runtime/Pyramid.h"
 
@@ -43,7 +43,7 @@ using IImage = ITensor;
  *
  * -# @ref NEArithmeticAddition
  * -# @ref NEScale
- * -# @ref NEDepthConvert
+ * -# @ref NEDepthConvertLayer
  *
  * This function reconstructs the original image from a Laplacian Image Pyramid.
  *
@@ -76,7 +76,7 @@ public:
      * @param[in]  constant_border_value (Optional) Constant value to use for borders if border_mode is set to CONSTANT.
      *
      */
-    void configure(const IPyramid *pyramid, const ITensor *input, ITensor *output, BorderMode border_mode, uint8_t constant_border_value);
+    void configure(const IPyramid *pyramid, ITensor *input, ITensor *output, BorderMode border_mode, uint8_t constant_border_value);
 
     // Inherited methods overridden:
     void run() override;
@@ -85,7 +85,7 @@ private:
     Pyramid                                 _tmp_pyr;
     std::unique_ptr<NEArithmeticAddition[]> _addf;
     std::unique_ptr<NEScale[]>              _scalef;
-    NEDepthConvert                          _depthf;
+    NEDepthConvertLayer                     _depthf;
 };
 }
 #endif /*__ARM_COMPUTE_NELAPLACIANRECONSTRUCT_H__ */

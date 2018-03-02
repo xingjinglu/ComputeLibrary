@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -33,54 +33,101 @@
 #include "arm_compute/core/Utils.h"
 #include "arm_compute/core/Validate.h"
 #include "arm_compute/core/Window.h"
+#include "arm_compute/core/utils/misc/ShapeCalculator.h"
 
 using namespace arm_compute;
+using namespace arm_compute::misc::shape_calculator;
+
+namespace
+{
+Status validate_arguments(const ITensorInfo *input, const ITensorInfo *output, int mult_interleave4x4_height)
+{
+    ARM_COMPUTE_RETURN_ERROR_ON(mult_interleave4x4_height < 1);
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QASYMM8, DataType::U8, DataType::S8,
+                                                         DataType::QS16, DataType::U16, DataType::S16, DataType::U32, DataType::S32,
+                                                         DataType::F16, DataType::F32);
+
+    if(output->total_size() != 0)
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DIMENSIONS(output->tensor_shape(), compute_interleaved_shape(*input, mult_interleave4x4_height));
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input, output);
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input, output);
+    }
+
+    return Status{};
+}
+
+std::pair<Status, Window> validate_and_configure_window(ITensorInfo *input, ITensorInfo *output, int mult_interleave4x4_height)
+{
+    constexpr unsigned int num_elems_processed_per_iteration_x = 4;
+    constexpr unsigned int num_elems_processed_per_iteration_y = 4;
+    const unsigned int     num_elems_written_per_iteration     = num_elems_processed_per_iteration_x * num_elems_processed_per_iteration_y * mult_interleave4x4_height;
+    bool                   window_changed                      = false;
+
+    // Configure kernel window
+    Window                win = calculate_max_window(*input, Steps(num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y));
+    AccessWindowRectangle input_access(input, 0, 0, num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y);
+    window_changed = window_changed || update_window_and_padding(win, input_access);
+
+    // Configure window in case of configured output
+    if(output->total_size() != 0)
+    {
+        const float scale_x = 4.0f * static_cast<float>(mult_interleave4x4_height);
+        const float scale_y = 1.0f / (scale_x);
+
+        AccessWindowRectangle output_access(output, 0, 0, num_elems_written_per_iteration, 1, scale_x, scale_y);
+        window_changed = window_changed || update_window_and_padding(win, output_access);
+        output_access.set_valid_region(win, input->valid_region());
+    }
+
+    Status err = (window_changed) ? ARM_COMPUTE_CREATE_ERROR(ErrorCode::RUNTIME_ERROR, "Insufficient Padding!") : Status{};
+    return std::make_pair(err, win);
+}
+} // namespace
 
 CLGEMMInterleave4x4Kernel::CLGEMMInterleave4x4Kernel()
     : _input(nullptr), _output(nullptr)
 {
 }
 
-void CLGEMMInterleave4x4Kernel::configure(const ICLTensor *input, ICLTensor *output)
+void CLGEMMInterleave4x4Kernel::configure(const ICLTensor *input, ICLTensor *output, int mult_interleave4x4_height)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::U8, DataType::S8, DataType::QS8, DataType::U16, DataType::S16, DataType::QS16, DataType::U32, DataType::S32, DataType::F16,
-                                                  DataType::F32);
-    ARM_COMPUTE_ERROR_ON_NULLPTR(output);
-
-    TensorShape output_shape = input->info()->tensor_shape();
-    output_shape.set(0, input->info()->dimension(0) * 4);
-    output_shape.set(1, std::ceil(input->info()->dimension(1) / 4.0f));
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input, output);
 
     // Output auto inizialitation if not yet initialized
-    auto_init_if_empty(*output->info(), output_shape, 1, input->info()->data_type(), input->info()->fixed_point_position());
+    auto_init_if_empty(*output->info(), input->info()->clone()->set_tensor_shape(compute_interleaved_shape(*input->info(), mult_interleave4x4_height)));
 
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DIMENSIONS(output->info()->tensor_shape(), output_shape);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, output);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, output);
+    // Perform validate step
+    ARM_COMPUTE_ERROR_THROW_ON(validate_arguments(input->info(), output->info(), mult_interleave4x4_height));
 
     _input  = input;
     _output = output;
 
+    // Create build options
+    CLBuildOptions build_opts;
+    build_opts.add_option("-DMULT_INTERLEAVE4X4_HEIGHT=" + support::cpp11::to_string(mult_interleave4x4_height));
+    switch(input->info()->element_size())
+    {
+        case 1:
+            build_opts.add_option("-DDATA_TYPE=uchar");
+            break;
+        case 2:
+            build_opts.add_option("-DDATA_TYPE=ushort");
+            break;
+        case 4:
+            build_opts.add_option("-DDATA_TYPE=uint");
+            break;
+        default:
+            ARM_COMPUTE_ERROR("Data type not supported");
+    }
+
     // Create kernel
-    std::string data_type_name;
-    data_type_name = support::cpp11::to_string(input->info()->element_size() * 8) + "bit";
-    _kernel        = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("gemm_interleave4x4_" + data_type_name));
+    _kernel = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("gemm_interleave4x4", build_opts.options()));
 
     // Configure kernel window
-    const unsigned int     num_elems_processed_per_iteration_x = max_cl_vector_width / data_size_from_type(input->info()->data_type());
-    constexpr unsigned int num_elems_processed_per_iteration_y = 4;
-    const unsigned int     num_elems_written_per_iteration     = num_elems_processed_per_iteration_x * num_elems_processed_per_iteration_y;
-
-    Window win = calculate_max_window(*input->info(), Steps(num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y));
-
-    AccessWindowRectangle input_access(input->info(), 0, 0, num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y);
-    AccessWindowRectangle output_access(output->info(), 0, 0, num_elems_written_per_iteration, 1, 4.f, 0.25f);
-
-    update_window_and_padding(win, input_access, output_access);
-
-    output_access.set_valid_region(win, input->info()->valid_region());
-
-    ICLKernel::configure(win);
+    auto win_config = validate_and_configure_window(input->info(), output->info(), mult_interleave4x4_height);
+    ARM_COMPUTE_ERROR_THROW_ON(win_config.first);
+    ICLKernel::configure(win_config.second);
 
     // Set config_id for enabling LWS tuning
     _config_id = "interleave4x4_";
@@ -89,6 +136,14 @@ void CLGEMMInterleave4x4Kernel::configure(const ICLTensor *input, ICLTensor *out
     _config_id += support::cpp11::to_string(output->info()->dimension(0));
     _config_id += "_";
     _config_id += support::cpp11::to_string(output->info()->dimension(1));
+}
+
+Status CLGEMMInterleave4x4Kernel::validate(const ITensorInfo *input, const ITensorInfo *output, int mult_interleave4x4_height)
+{
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_arguments(input, output, mult_interleave4x4_height));
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_and_configure_window(input->clone().get(), output->clone().get(), mult_interleave4x4_height).first);
+
+    return Status{};
 }
 
 void CLGEMMInterleave4x4Kernel::run(const Window &window, cl::CommandQueue &queue)
@@ -108,16 +163,12 @@ void CLGEMMInterleave4x4Kernel::run(const Window &window, cl::CommandQueue &queu
     Window in_slice  = window.first_slice_window_2D();
     Window out_slice = window.first_slice_window_2D();
 
-    // Change x and y steps for the slide of output tensor
-    out_slice.scale(Window::DimX, 4.f);
-    out_slice.scale(Window::DimY, 0.25f);
-
     do
     {
         unsigned int idx = 0;
         add_2D_tensor_argument(idx, _input, in_slice);
         add_2D_tensor_argument(idx, _output, out_slice);
-        enqueue(queue, *this, in_slice);
+        enqueue(queue, *this, in_slice, _lws_hint);
     }
     while(window.slide_window_slice_2D(in_slice) && window.slide_window_slice_2D(out_slice));
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -26,16 +26,19 @@
 #include "arm_compute/graph/CL/CLMap.h"
 #include "arm_compute/graph/CL/CLUnmap.h"
 #include "arm_compute/graph/INode.h"
+#include "arm_compute/graph/ITensorObject.h"
 #include "arm_compute/graph/Tensor.h"
+#include "arm_compute/runtime/CL/CLScheduler.h"
 #include "arm_compute/runtime/CL/CLTensor.h"
 #include "arm_compute/runtime/Tensor.h"
+#include "support/ToolchainSupport.h"
 
 using namespace arm_compute::graph;
 
 struct Stage
 {
-    Tensor                                 *_input;
-    Tensor                                 *_output;
+    ITensorObject                          *_input;
+    ITensorObject                          *_output;
     std::unique_ptr<arm_compute::IFunction> _function;
 };
 
@@ -48,20 +51,22 @@ public:
      */
     void configure(GraphHints _next_hints);
 
-    GraphContext                         _ctx{};
-    std::vector<Stage>                   _pipeline{};
-    std::vector<std::unique_ptr<Tensor>> _tensors{};
-    std::vector<std::unique_ptr<INode>>  _nodes{};
-    GraphHints                           _current_hints{};
-    GraphHints                           _next_hints{};
-    std::unique_ptr<Tensor>              _graph_input{ nullptr };
-    std::unique_ptr<Tensor>              _graph_output{ nullptr };
-    std::unique_ptr<INode>               _current_node{ nullptr };
-    Tensor                              *_current_output{ nullptr };
+    GraphContext                                _ctx{};
+    std::vector<Stage>                          _pipeline{};
+    std::vector<std::unique_ptr<ITensorObject>> _tensors{};
+    std::vector<std::unique_ptr<INode>>         _nodes{};
+    GraphHints                                  _current_hints{};
+    GraphHints                                  _next_hints{};
+    std::unique_ptr<ITensorObject>              _graph_input{ nullptr };
+    std::unique_ptr<ITensorObject>              _graph_output{ nullptr };
+    std::unique_ptr<INode>                      _current_node{ nullptr };
+    ITensorObject                              *_current_output{ nullptr };
+    bool                                        _info_enabled{ false };
+    CLTuner                                     _tuner{};
 
 private:
-    Tensor    *_current_input{ nullptr };
-    GraphHints _previous_hints{};
+    ITensorObject *_current_input{ nullptr };
+    GraphHints     _previous_hints{};
 };
 
 Graph::~Graph() //NOLINT
@@ -72,13 +77,30 @@ Graph::~Graph() //NOLINT
 Graph::Graph()
     : _pimpl{ new Private() }
 {
+    graph_init();
+}
+
+void Graph::graph_init(const bool use_cl_tuner)
+{
+    // Check if OpenCL is available and initialize the scheduler
+    if(opencl_is_available())
+    {
+        if(use_cl_tuner)
+        {
+            arm_compute::CLScheduler::get().default_init(&_pimpl->_tuner);
+        }
+        else
+        {
+            arm_compute::CLScheduler::get().default_init();
+        }
+    }
 }
 
 void Graph::run()
 {
     while(true)
     {
-        if(!_pimpl->_graph_input->call_accessor())
+        if(_pimpl->_graph_input->has_accessor() && !_pimpl->_graph_input->call_accessor())
         {
             return;
         }
@@ -88,7 +110,8 @@ void Graph::run()
             stage._function->run();
         }
 
-        if(!_pimpl->_graph_output->call_accessor())
+        if((_pimpl->_graph_output->has_accessor() && !_pimpl->_graph_output->call_accessor())
+           || (!_pimpl->_graph_output->has_accessor()))
         {
             return;
         }
@@ -109,6 +132,11 @@ void Graph::Private::configure(GraphHints _next_hints)
         _previous_hints = _current_hints; // For the first node just assume the previous node was of the same type as this one
     }
 
+    if(_current_node->supports_in_place())
+    {
+        _current_output = _current_input;
+    }
+
     //Automatic output configuration ?
     if(_current_output == nullptr)
     {
@@ -126,10 +154,16 @@ void Graph::Private::configure(GraphHints _next_hints)
         _current_output->set_target(TargetHint::NEON);
     }
 
-    // Update ctx and instantiate node
+    // Instantiate Node
     _ctx.hints()                                 = _current_hints;
-    std::unique_ptr<arm_compute::IFunction> func = _current_node->instantiate_node(_ctx, _current_input->tensor(), _current_output->tensor());
-    _current_input->allocate();
+    std::unique_ptr<arm_compute::IFunction> func = _current_node->instantiate_node(_ctx, _current_input, _current_output);
+
+    // If the operation is done in-place, do not allocate or it will prevent following layers from performing the configuration
+    if(!_current_node->supports_in_place())
+    {
+        // Allocate current input
+        _current_input->allocate();
+    }
 
     // Map input if needed
     if(_current_input->target() == TargetHint::OPENCL)
@@ -181,7 +215,7 @@ void Graph::add_node(std::unique_ptr<INode> node)
 }
 
 //Add a tensor with an Accessor (i.e either the input or output of the graph)
-void Graph::add_tensor(std::unique_ptr<Tensor> tensor)
+void Graph::add_tensor_object(std::unique_ptr<ITensorObject> tensor)
 {
     // If it's the first Tensor added then it will be the input of the Graph.
     if(_pimpl->_graph_input == nullptr)
@@ -201,6 +235,24 @@ void Graph::add_tensor(std::unique_ptr<Tensor> tensor)
         // Finalize the graph by configuring the last Node of the graph:
         _pimpl->configure(_pimpl->_current_hints); // Ignore _next_hint as this is the last node, and just use the same hint as before this node.
         _pimpl->_graph_output->allocate();
+    }
+}
+
+bool Graph::opencl_is_available()
+{
+    return arm_compute::opencl_is_available();
+}
+
+arm_compute::GPUTarget Graph::gpu_target()
+{
+    // Check if OpenCL is available before returning the GPU target
+    if(opencl_is_available())
+    {
+        return arm_compute::CLScheduler::get().target();
+    }
+    else
+    {
+        return GPUTarget::MIDGARD;
     }
 }
 
@@ -227,7 +279,13 @@ Graph &arm_compute::graph::operator<<(Graph &graph, TensorInfo &&info)
 
 Graph &arm_compute::graph::operator<<(Graph &graph, Tensor &&tensor)
 {
-    graph.add_tensor(arm_compute::support::cpp14::make_unique<Tensor>(std::move(tensor)));
+    graph.add_tensor_object(arm_compute::support::cpp14::make_unique<Tensor>(std::move(tensor)));
+    return graph;
+}
+
+Graph &arm_compute::graph::operator<<(Graph &graph, SubTensor &&sub_tensor)
+{
+    graph.add_tensor_object(arm_compute::support::cpp14::make_unique<SubTensor>(std::move(sub_tensor)));
     return graph;
 }
 

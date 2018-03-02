@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -24,7 +24,10 @@
 #ifndef __ARM_COMPUTE_GRAPH_GRAPH_H__
 #define __ARM_COMPUTE_GRAPH_GRAPH_H__
 
+#include "arm_compute/core/CL/CLTypes.h"
 #include "arm_compute/graph/INode.h"
+#include "arm_compute/graph/ITensorObject.h"
+#include "arm_compute/graph/SubTensor.h"
 #include "arm_compute/graph/Tensor.h"
 #include "arm_compute/graph/Types.h"
 #include "support/ToolchainSupport.h"
@@ -53,6 +56,11 @@ public:
     Graph(Graph &&) = delete;
     /** Prevent instances from being move assigned */
     Graph &operator=(Graph &&) = delete;
+    /** Initialize the graph
+     *
+     * @param[in] use_cl_tuner Use the CLTuner if this value is true
+     */
+    void graph_init(const bool use_cl_tuner = false);
     /** Executes the graph */
     void run();
     /** Adds a node to the graph
@@ -64,7 +72,13 @@ public:
      *
      * @param[in] tensor Tensor to add
      */
-    void add_tensor(std::unique_ptr<Tensor> tensor);
+    void add_tensor_object(std::unique_ptr<ITensorObject> tensor);
+    /** Check if the OpenCL target is available
+     */
+    static bool opencl_is_available();
+    /** Returns the GPU target
+     */
+    static GPUTarget gpu_target();
     /** Manually sets the output of the current node
      *
      * @param[in] tmp Output info to set
@@ -98,6 +112,14 @@ Graph &operator<<(Graph &graph, TensorInfo &&info);
  * @return Updated graph
  */
 Graph &operator<<(Graph &graph, Tensor &&tensor);
+/** Overloaded stream operator to add a sub-tensor to the graph
+ *
+ * @param[in, out] graph      Graph to add the tensor
+ * @param[in]      sub_tensor Sub-tensor to be added
+ *
+ * @return Updated graph
+ */
+Graph &operator<<(Graph &graph, SubTensor &&sub_tensor);
 /** Overloaded stream operator to provide a target hint to the graph
  *
  * @param[in, out] graph       Graph to provide the hint to

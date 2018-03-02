@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -41,7 +41,7 @@ class NEActivationLayer : public INESimpleFunction
 public:
     /** Set the input and output tensor.
      *
-     * @note If the output tensor is a nullptr, the activation function will be performed in-place
+     * @note If the output tensor is a nullptr or is equal to the input, the activation function will be performed in-place
      *
      * @param[in, out] input           Source tensor. In case of @p output tensor = nullptr, this tensor will store the result
      *                                 of the activation function. Data types supported: QS8/QS16/F32.
@@ -49,6 +49,16 @@ public:
      * @param[in]      activation_info Activation layer parameters.
      */
     void configure(ITensor *input, ITensor *output, ActivationLayerInfo activation_info);
+    /** Static function to check if given info will lead to a valid configuration of @ref NEActivationLayer
+     *
+     * @param[in] input    Source tensor info. In case of @p output tensor info = nullptr, this tensor will store the result
+     *                     of the activation function. Data types supported: QS8/QS16/F16/F32.
+     * @param[in] output   Destination tensor info. Data type supported: same as @p input
+     * @param[in] act_info Activation layer information.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output, const ActivationLayerInfo &act_info);
 };
 }
 #endif /* __ARM_COMPUTE_NEACTIVATIONLAYER_H__ */

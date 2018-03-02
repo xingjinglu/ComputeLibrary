@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -70,6 +70,7 @@ void NECumulativeDistributionKernel::configure(const IImage *input, const IDistr
 void NECumulativeDistributionKernel::run(const Window &window, const ThreadInfo &info)
 {
     ARM_COMPUTE_UNUSED(info);
+    ARM_COMPUTE_UNUSED(window);
     ARM_COMPUTE_ERROR_ON_UNCONFIGURED_KERNEL(this);
     ARM_COMPUTE_ERROR_ON_INVALID_SUBWINDOW(INEKernel::window(), window);
     ARM_COMPUTE_ERROR_ON(_distribution->buffer() == nullptr);
@@ -101,7 +102,7 @@ void NECumulativeDistributionKernel::run(const Window &window, const ThreadInfo 
     }
     else
     {
-        const float diff = image_size - cd_min;
+        const float diff = image_size - 1;
 
         for(unsigned int x = 0; x < _histogram_size; ++x)
         {

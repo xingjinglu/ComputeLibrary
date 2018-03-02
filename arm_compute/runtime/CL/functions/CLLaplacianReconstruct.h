@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -27,7 +27,7 @@
 #include "arm_compute/core/Types.h"
 #include "arm_compute/runtime/CL/CLPyramid.h"
 #include "arm_compute/runtime/CL/functions/CLArithmeticAddition.h"
-#include "arm_compute/runtime/CL/functions/CLDepthConvert.h"
+#include "arm_compute/runtime/CL/functions/CLDepthConvertLayer.h"
 #include "arm_compute/runtime/CL/functions/CLScale.h"
 #include "arm_compute/runtime/IFunction.h"
 
@@ -43,7 +43,7 @@ using ICLImage = ICLTensor;
  *
  * -# @ref CLArithmeticAddition
  * -# @ref CLScale
- * -# @ref CLDepthConvert
+ * -# @ref CLDepthConvertLayer
  *
  * This function reconstructs the original image from a Laplacian Image Pyramid.
  *
@@ -76,7 +76,7 @@ public:
      * @param[in]  constant_border_value (Optional) Constant value to use for borders if border_mode is set to CONSTANT.
      *
      */
-    void configure(const CLPyramid *pyramid, const ICLTensor *input, ICLTensor *output, BorderMode border_mode, uint8_t constant_border_value);
+    void configure(const CLPyramid *pyramid, ICLTensor *input, ICLTensor *output, BorderMode border_mode, uint8_t constant_border_value);
 
     // Inherited methods overridden:
     void run() override;
@@ -85,7 +85,7 @@ private:
     CLPyramid                               _tmp_pyr;
     std::unique_ptr<CLArithmeticAddition[]> _addf;
     std::unique_ptr<CLScale[]>              _scalef;
-    CLDepthConvert                          _depthf;
+    CLDepthConvertLayer                     _depthf;
 };
 }
 #endif /*__ARM_COMPUTE_CLLAPLACIANRECONSTRUCT_H__ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -47,8 +47,8 @@ inline void fill_constant_value_single_channel_special<float, 1u, 1u>(ITensor *t
     float border_value;
     constant_border_value.get(border_value);
     uint8_t *const start_valid_region = tensor->ptr_to_element(tensor->info()->valid_region().anchor);
-    const size_t &width              = tensor->info()->valid_region().shape[0];
-    const size_t &height             = tensor->info()->valid_region().shape[1];
+    const size_t   width              = tensor->info()->valid_region().shape[0];
+    const size_t   height             = tensor->info()->valid_region().shape[1];
     const int      stridey            = tensor->info()->strides_in_bytes()[1];
 
     // Left and right border
@@ -105,7 +105,10 @@ NEFillBorderKernel::NEFillBorderKernel()
 
 void NEFillBorderKernel::configure(ITensor *tensor, BorderSize border_size, BorderMode border_mode, const PixelValue &constant_border_value)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(tensor, 1, DataType::U8, DataType::QS8, DataType::QS16, DataType::U16, DataType::S16, DataType::F16, DataType::U32, DataType::S32, DataType::F32);
+    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(tensor, 1, DataType::U8, DataType::QS8, DataType::QASYMM8,
+                                                  DataType::QS16, DataType::U16, DataType::S16,
+                                                  DataType::U32, DataType::S32,
+                                                  DataType::F16, DataType::F32);
 
     _tensor                = tensor;
     _border_size           = border_size;
@@ -140,6 +143,7 @@ void NEFillBorderKernel::run(const Window &window, const ThreadInfo &info)
         {
             switch(_tensor->info()->data_type())
             {
+                case DataType::QASYMM8:
                 case DataType::U8:
                     fill_constant_value_single_channel<uint8_t>(window);
                     break;
@@ -184,6 +188,7 @@ void NEFillBorderKernel::run(const Window &window, const ThreadInfo &info)
         {
             switch(_tensor->info()->data_type())
             {
+                case DataType::QASYMM8:
                 case DataType::U8:
                     fill_replicate_single_channel<uint8_t>(window);
                     break;
@@ -228,8 +233,8 @@ template <typename T>
 void NEFillBorderKernel::fill_replicate_single_channel(const Window &window)
 {
     uint8_t *const start_valid_region = _tensor->ptr_to_element(_tensor->info()->valid_region().anchor);
-    const size_t &width              = _tensor->info()->valid_region().shape[0];
-    const size_t &height             = _tensor->info()->valid_region().shape[1];
+    const size_t   width              = _tensor->info()->valid_region().shape[0];
+    const size_t   height             = _tensor->info()->valid_region().shape[1];
 
     // Left and right border
     Window vertical(window);
@@ -287,8 +292,8 @@ void NEFillBorderKernel::fill_constant_value_single_channel(const Window &window
     _constant_border_value.get(constant_border_value);
 
     uint8_t *const start_valid_region = _tensor->ptr_to_element(_tensor->info()->valid_region().anchor);
-    const size_t &width              = _tensor->info()->valid_region().shape[0];
-    const size_t &height             = _tensor->info()->valid_region().shape[1];
+    const size_t   width              = _tensor->info()->valid_region().shape[0];
+    const size_t   height             = _tensor->info()->valid_region().shape[1];
     const int      stridey            = _tensor->info()->strides_in_bytes()[1];
 
     // Left and right border

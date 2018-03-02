@@ -186,7 +186,7 @@ void fill_lookuptable(T &&table)
 template <typename T>
 std::pair<T, T> get_batchnormalization_layer_test_bounds(int fixed_point_position = 1)
 {
-    bool is_float = std::is_floating_point<T>::value;
+    const bool is_float = std::is_floating_point<T>::value;
     std::pair<T, T> bounds;
 
     // Set initial values
@@ -201,6 +201,37 @@ std::pair<T, T> get_batchnormalization_layer_test_bounds(int fixed_point_positio
 
     return bounds;
 }
+
+/** Helper function to get the testing range for NormalizePlanarYUV layer.
+ *
+ * @return A pair containing the lower upper testing bounds.
+ */
+template <typename T>
+std::pair<T, T> get_normalize_planar_yuv_layer_test_bounds()
+{
+    std::pair<T, T> bounds;
+
+    bounds = std::make_pair(-1.f, 1.f);
+
+    return bounds;
+}
+
+/** Convert quantized simple tensor into float using tensor quantization information.
+ *
+ * @param[in] src Quantized tensor.
+ *
+ * @return Float tensor.
+ */
+SimpleTensor<float> convert_from_asymmetric(const SimpleTensor<uint8_t> &src);
+
+/** Convert float simple tensor into quantized using specified quantization information.
+ *
+ * @param[in] src               Float tensor.
+ * @param[in] quantization_info Quantification information.
+ *
+ * @return Quantized tensor.
+ */
+SimpleTensor<uint8_t> convert_to_asymmetric(const SimpleTensor<float> &src, const QuantizationInfo &quantization_info);
 } // namespace validation
 } // namespace test
 } // namespace arm_compute

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -26,6 +26,7 @@
 
 #include "arm_compute/graph/GraphContext.h"
 #include "arm_compute/graph/INode.h"
+#include "arm_compute/graph/ITensorObject.h"
 #include "arm_compute/graph/Tensor.h"
 #include "arm_compute/graph/Types.h"
 
@@ -39,27 +40,30 @@ class BatchNormalizationLayer final : public INode
 public:
     /** Default constructor
      *
-     * @param[in] mean    Mean values tensor
-     * @param[in] var     Var values tensor
-     * @param[in] gamma   Gamma values tensor
-     * @param[in] beta    Beta values tensor
-     * @param[in] epsilon Epsilon value
+     * @param[in] mean     Mean values tensor
+     * @param[in] var      Var values tensor
+     * @param[in] gamma    Gamma values tensor
+     * @param[in] beta     Beta values tensor
+     * @param[in] epsilon  Epsilon value
+     * @param[in] act_info (Optional) Activation layer information in case of a fused activation. Only RELU, BOUNDED_RELU and LU_BOUNDED_RELU supported.
      */
     template <typename AccessorType>
-    BatchNormalizationLayer(AccessorType &&mean, AccessorType &&var, AccessorType &&gamma, AccessorType &&beta, float epsilon)
-        : _mean(std::move(mean)), _var(std::move(var)), _gamma(std::move(gamma)), _beta(std::move(beta)), _epsilon(epsilon)
+    BatchNormalizationLayer(AccessorType &&mean, AccessorType &&var, AccessorType &&gamma, AccessorType &&beta, float epsilon, ActivationLayerInfo act_info = ActivationLayerInfo())
+        : _mean(std::move(mean)), _var(std::move(var)), _gamma(std::move(gamma)), _beta(std::move(beta)), _epsilon(epsilon), _act_info(act_info)
     {
+        set_supports_in_place(true);
     }
 
     // Inherited methods overriden:
-    std::unique_ptr<arm_compute::IFunction> instantiate_node(GraphContext &ctx, ITensor *input, ITensor *output) override;
+    std::unique_ptr<arm_compute::IFunction> instantiate_node(GraphContext &ctx, ITensorObject *input, ITensorObject *output) override;
 
 private:
-    Tensor _mean;
-    Tensor _var;
-    Tensor _gamma;
-    Tensor _beta;
-    float  _epsilon;
+    Tensor              _mean;
+    Tensor              _var;
+    Tensor              _gamma;
+    Tensor              _beta;
+    float               _epsilon;
+    ActivationLayerInfo _act_info;
 };
 } // namespace graph
 } // namespace arm_compute

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -62,7 +62,7 @@ FIXTURE_DATA_TEST_CASE(RunLarge, NEFlattenLayerFixture<float>, framework::Datase
 }
 TEST_SUITE_END()
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 TEST_SUITE(FP16)
 FIXTURE_DATA_TEST_CASE(RunSmall, NEFlattenLayerFixture<half>, framework::DatasetMode::ALL, combine(framework::dataset::concat(datasets::Small3DShapes(), datasets::Small4DShapes()),
                                                                                                    framework::dataset::make("DataType", DataType::F16)))
@@ -77,18 +77,18 @@ FIXTURE_DATA_TEST_CASE(RunLarge, NEFlattenLayerFixture<half>, framework::Dataset
     validate(Accessor(_target), _reference);
 }
 TEST_SUITE_END()
-#endif // ARM_COMPUTE_ENABLE_FP16
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 TEST_SUITE_END()
 
 TEST_SUITE(Quantized)
 TEST_SUITE(QS8)
-FIXTURE_DATA_TEST_CASE(RunSmall, NEFlattenLayerFixture<int8_t>, framework::DatasetMode::ALL, combine(framework::dataset::concat(datasets::Small3DShapes(), datasets::Small4DShapes()),
-                                                                                                     framework::dataset::make("DataType", DataType::QS8)))
+FIXTURE_DATA_TEST_CASE(RunTiny, NEFlattenLayerFixture<int8_t>, framework::DatasetMode::ALL, combine(framework::dataset::concat(datasets::Tiny3DShapes(), datasets::Tiny4DShapes()),
+                                                                                                    framework::dataset::make("DataType", DataType::QS8)))
 {
     // Validate output
     validate(Accessor(_target), _reference);
 }
-FIXTURE_DATA_TEST_CASE(RunLarge, NEFlattenLayerFixture<int8_t>, framework::DatasetMode::NIGHTLY, combine(framework::dataset::concat(datasets::Large3DShapes(), datasets::Large4DShapes()),
+FIXTURE_DATA_TEST_CASE(RunSmall, NEFlattenLayerFixture<int8_t>, framework::DatasetMode::NIGHTLY, combine(framework::dataset::concat(datasets::Small3DShapes(), datasets::Small4DShapes()),
                                                                                                          framework::dataset::make("DataType", DataType::QS8)))
 {
     // Validate output
@@ -97,13 +97,13 @@ FIXTURE_DATA_TEST_CASE(RunLarge, NEFlattenLayerFixture<int8_t>, framework::Datas
 TEST_SUITE_END()
 
 TEST_SUITE(QS16)
-FIXTURE_DATA_TEST_CASE(RunSmall, NEFlattenLayerFixture<int16_t>, framework::DatasetMode::ALL, combine(framework::dataset::concat(datasets::Small3DShapes(), datasets::Small4DShapes()),
-                                                                                                      framework::dataset::make("DataType", DataType::QS16)))
+FIXTURE_DATA_TEST_CASE(RunTiny, NEFlattenLayerFixture<int16_t>, framework::DatasetMode::ALL, combine(framework::dataset::concat(datasets::Tiny3DShapes(), datasets::Tiny4DShapes()),
+                                                                                                     framework::dataset::make("DataType", DataType::QS16)))
 {
     // Validate output
     validate(Accessor(_target), _reference);
 }
-FIXTURE_DATA_TEST_CASE(RunLarge, NEFlattenLayerFixture<int16_t>, framework::DatasetMode::NIGHTLY, combine(framework::dataset::concat(datasets::Large3DShapes(), datasets::Large4DShapes()),
+FIXTURE_DATA_TEST_CASE(RunSmall, NEFlattenLayerFixture<int16_t>, framework::DatasetMode::NIGHTLY, combine(framework::dataset::concat(datasets::Small3DShapes(), datasets::Small4DShapes()),
                                                                                                           framework::dataset::make("DataType", DataType::QS16)))
 {
     // Validate output

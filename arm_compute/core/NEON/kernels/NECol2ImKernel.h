@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -26,6 +26,8 @@
 
 #include "arm_compute/core/NEON/INEKernel.h"
 
+#include "arm_compute/core/Size2D.h"
+
 namespace arm_compute
 {
 class ITensor;
@@ -51,6 +53,10 @@ class ITensor;
 class NECol2ImKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NECol2ImKernel";
+    }
     /** Default constructor */
     NECol2ImKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -66,12 +72,22 @@ public:
 
     /** Set the input and output of the kernel.
      *
-     * @param[in]  input          The input tensor to convert. Data types supported: U8/S8/QS8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in]  input          The input tensor to convert. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
      * @param[out] output         The output tensor. 3 lower dimensions represent a single output [width, height, OFM],
      *                            while the rest represent batch of outputs. Data types supported: Same as @p input
      * @param[in]  convolved_dims Output convolved dimensions.
      */
-    void configure(const ITensor *input, ITensor *output, std::pair<unsigned int, unsigned int> convolved_dims);
+    void configure(const ITensor *input, ITensor *output, const Size2D &convolved_dims);
+    /** Static function to check if given info will lead to a valid configuration of @ref NECol2ImKernel
+     *
+     * @param[in] input          The input tensor to convert. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in] output         The output tensor. 3 lower dimensions represent a single output [width, height, OFM],
+     *                           while the rest represent batch of outputs. Data types supported: Same as @p input
+     * @param[in] convolved_dims Output convolved dimensions.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output, const Size2D &convolved_dims);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;
@@ -93,7 +109,7 @@ private:
     Col2ImFunctionPtr _func;
     const ITensor    *_input;
     ITensor          *_output;
-    std::pair<unsigned int, unsigned int> _convolved_dims;
+    Size2D            _convolved_dims;
 };
 } // namespace arm_compute
 #endif /*__ARM_COMPUTE_NECOL2IMKERNEL_H__ */

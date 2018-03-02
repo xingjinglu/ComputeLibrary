@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -31,10 +31,55 @@
 #include "arm_compute/core/Helpers.h"
 #include "arm_compute/core/Types.h"
 #include "arm_compute/core/Validate.h"
+#include "arm_compute/core/utils/misc/ShapeCalculator.h"
 
 #include <cmath>
 
 using namespace arm_compute;
+using namespace arm_compute::misc::shape_calculator;
+
+namespace
+{
+Status validate_arguments(const ITensorInfo *input, const ITensorInfo *output, std::pair<unsigned int, unsigned int> convolved_dims)
+{
+    ARM_COMPUTE_RETURN_ERROR_ON_NULLPTR(input, output);
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QASYMM8, DataType::QS16, DataType::F16, DataType::F32);
+
+    // Checks performed when output is configured
+    if(output->total_size() != 0)
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DIMENSIONS(output->tensor_shape(), compute_col2im_shape(*input, convolved_dims));
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input, output);
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input, output);
+        ARM_COMPUTE_ERROR_ON_MISMATCHING_QUANTIZATION_INFO(input, output);
+    }
+
+    return Status{};
+}
+
+std::pair<Status, Window> validate_and_configure_window(ITensorInfo *input, ITensorInfo *output, std::pair<unsigned int, unsigned int> convolved_dims)
+{
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input, output);
+    // Output auto inizialitation if not yet initialized
+    auto_init_if_empty(*output, input->clone()->set_tensor_shape(compute_col2im_shape(*input, convolved_dims)));
+
+    const unsigned int num_elems_read_per_iteration = is_data_type_fixed_point(input->data_type()) ? 1 : 8;
+
+    // Configure window
+    Window win = calculate_max_window(*input, Steps(num_elems_read_per_iteration));
+
+    // Update window and padding just for the input tensor as we cannot access out-of-bounds elements in the output one
+    AccessWindowHorizontal input_access(input, 0, num_elems_read_per_iteration);
+    bool                   window_changed = update_window_and_padding(win, input_access);
+
+    Coordinates coord;
+    coord.set_num_dimensions(output->num_dimensions());
+    output->set_valid_region(ValidRegion(coord, output->tensor_shape()));
+
+    Status err = (window_changed) ? ARM_COMPUTE_CREATE_ERROR(ErrorCode::RUNTIME_ERROR, "Insufficient Padding!") : Status{};
+    return std::make_pair(err, win);
+}
+} // namespace
 
 CLCol2ImKernel::CLCol2ImKernel()
     : _input(nullptr), _output(nullptr), _convolved_dims()
@@ -43,44 +88,64 @@ CLCol2ImKernel::CLCol2ImKernel()
 
 void CLCol2ImKernel::configure(const ICLTensor *input, ICLTensor *output, std::pair<unsigned int, unsigned int> convolved_dims)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QS16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_NULLPTR(output);
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input, output);
 
-    TensorShape output_shape = input->info()->tensor_shape();
-    output_shape.set(0, convolved_dims.first);
-    output_shape.set(1, convolved_dims.second);
-    output_shape.set(2, input->info()->tensor_shape()[0]);
-
-    // Output auto inizialitation if not yet initialized
-    auto_init_if_empty(*output->info(), output_shape, 1, input->info()->data_type(), input->info()->fixed_point_position());
-
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DIMENSIONS(output->info()->tensor_shape(), output_shape);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, output);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, output);
+    // Perform validation step
+    ARM_COMPUTE_ERROR_THROW_ON(validate_arguments(input->info(), output->info(), convolved_dims));
 
     _input          = input;
     _output         = output;
     _convolved_dims = convolved_dims;
 
+    const DataType data_type = input->info()->data_type();
+
     // Create kernel
-    std::set<std::string> build_opts = { ("-DDATA_TYPE=" + get_cl_type_from_data_type(input->info()->data_type())) };
-    build_opts.emplace("-DWIDTH_OUTPUT=" + support::cpp11::to_string(_convolved_dims.first));
-    if(is_data_type_fixed_point(input->info()->data_type()))
+    CLBuildOptions build_opts;
+    build_opts.add_option("-DDATA_TYPE=" + get_cl_type_from_data_type(data_type));
+    build_opts.add_option("-DELEMENT_SIZE=" + support::cpp11::to_string(input->info()->element_size()));
+    build_opts.add_option("-DWIDTH_INPUT=" + support::cpp11::to_string(input->info()->dimension(0)));
+    build_opts.add_option("-DWIDTH_OUTPUT=" + support::cpp11::to_string(_convolved_dims.first));
+    build_opts.add_option_if(is_data_type_fixed_point(data_type), "-DFIXED_POINT_POSITION=" + support::cpp11::to_string(input->info()->fixed_point_position()));
+
+    _kernel = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("col2im", build_opts.options()));
+
+    // Configure the local work size for Bifrost with a value obtained
+    // via exhaustive autotuning over 30 representative tensor shapes.
+    const GPUTarget gpu_target = get_arch_from_target(get_target());
+    if(gpu_target == GPUTarget::BIFROST)
     {
-        build_opts.emplace("-DFIXED_POINT_POSITION=" + support::cpp11::to_string(input->info()->fixed_point_position()));
+        if((_convolved_dims.first == 7) || (_convolved_dims.first == 14))
+        {
+            _lws_hint = cl::NDRange(1, 7, 1);
+        }
+        else
+        {
+            _lws_hint = cl::NDRange(1, 8, 1);
+        }
     }
 
-    _kernel = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("col2im", build_opts));
+    // Configure kernel window
+    auto win_config = validate_and_configure_window(input->info(), output->info(), _convolved_dims);
+    ARM_COMPUTE_ERROR_THROW_ON(win_config.first);
+    ICLKernel::configure(win_config.second);
 
-    // Configure window
-    Window win = calculate_max_window(*input->info(), Steps());
+    // Set config_id for enabling LWS tuning
+    _config_id = "col2im_";
+    _config_id += lower_string(string_from_data_type(input->info()->data_type()));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(input->info()->dimension(0));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(input->info()->dimension(1));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(output->info()->dimension(0));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(output->info()->dimension(1));
+}
 
-    // The CLCol2ImKernel doesn't need padding so update_window_and_padding() can be skipped
-    Coordinates coord;
-    coord.set_num_dimensions(output->info()->num_dimensions());
-    output->info()->set_valid_region(ValidRegion(coord, output->info()->tensor_shape()));
-
-    ICLKernel::configure(win);
+Status CLCol2ImKernel::validate(const ITensorInfo *input, const ITensorInfo *output, std::pair<unsigned int, unsigned int> convolved_dims)
+{
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_arguments(input, output, convolved_dims));
+    return Status{};
 }
 
 void CLCol2ImKernel::run(const Window &window, cl::CommandQueue &queue)
@@ -103,7 +168,7 @@ void CLCol2ImKernel::run(const Window &window, cl::CommandQueue &queue)
         unsigned int idx = 0;
         add_3D_tensor_argument(idx, _input, slice);
         add_3D_tensor_argument(idx, _output, slice);
-        enqueue(queue, *this, slice);
+        enqueue(queue, *this, slice, _lws_hint);
     }
     while(collapsed_window.slide_window_slice_3D(slice));
 }

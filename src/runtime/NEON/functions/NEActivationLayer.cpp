@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -33,4 +33,9 @@ void NEActivationLayer::configure(ITensor *input, ITensor *output, ActivationLay
     auto k = arm_compute::support::cpp14::make_unique<NEActivationLayerKernel>();
     k->configure(input, output, activation_info);
     _kernel = std::move(k);
+}
+
+Status NEActivationLayer::validate(const ITensorInfo *input, const ITensorInfo *output, const ActivationLayerInfo &act_info)
+{
+    return NEActivationLayerKernel::validate(input, output, act_info);
 }

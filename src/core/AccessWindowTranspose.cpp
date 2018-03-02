@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -180,7 +180,7 @@ bool AccessWindowTranspose::update_window_if_needed(Window &window) const
     return window_modified;
 }
 
-bool AccessWindowTranspose::update_padding_if_needed(const Window &window) const
+bool AccessWindowTranspose::update_padding_if_needed(const Window &window)
 {
     // Only update the padding if the tensor allows it
     if(_info == nullptr || !_info->is_resizable())
@@ -201,8 +201,8 @@ bool AccessWindowTranspose::update_padding_if_needed(const Window &window) const
     PaddingSize padding;
     padding.left   = std::max(0, -min_x);
     padding.right  = std::max<int>(0, max_x - shape[0]);
-    padding.top    = shape.num_dimensions() == 1 ? 0 : std::max(0, -min_y);
-    padding.bottom = shape.num_dimensions() == 1 ? 0 : std::max<int>(0, max_y - shape[1]);
+    padding.top    = std::max(0, -min_y);
+    padding.bottom = std::max<int>(0, max_y - shape[1]);
 
     // Update strides in tensor info
     return _info->extend_padding(padding);

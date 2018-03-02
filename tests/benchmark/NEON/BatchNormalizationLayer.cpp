@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -33,6 +33,7 @@
 
 #include "tests/benchmark/fixtures/BatchNormalizationLayerFixture.h"
 #include "tests/datasets/system_tests/googlenet/inceptionv4/GoogLeNetInceptionV4BatchNormalizationLayerDataset.h"
+#include "tests/datasets/system_tests/mobilenet/MobileNetBatchNormalizationLayerDataset.h"
 #include "tests/datasets/system_tests/yolo/v2/YOLOV2BatchNormalizationLayerDataset.h"
 
 namespace arm_compute
@@ -41,32 +42,50 @@ namespace test
 {
 namespace
 {
-#ifdef ARM_COMPUTE_ENABLE_FP16
-const auto data_types = framework::dataset::make("DataType", { DataType::F16, DataType::F32, DataType::QS8 });
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
-const auto data_types = framework::dataset::make("DataType", { DataType::F32, DataType::QS8 });
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+const auto data_types = framework::dataset::make("DataType", { DataType::F16, DataType::F32 });
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
+const auto data_types = framework::dataset::make("DataType", { DataType::F32 });
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 } // namespace
 
 using NEBatchNormalizationLayerFixture = BatchNormalizationLayerFixture<Tensor, NEBatchNormalizationLayer, Accessor>;
 
 TEST_SUITE(NEON)
 
+REGISTER_FIXTURE_DATA_TEST_CASE(MobileNetBatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::ALL,
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::MobileNetBatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
+                                                            framework::dataset::make("Batches", 1)));
 REGISTER_FIXTURE_DATA_TEST_CASE(YOLOV2BatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::ALL,
-                                framework::dataset::combine(framework::dataset::combine(datasets::YOLOV2BatchNormalizationLayerDataset(), data_types),
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::YOLOV2BatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
                                                             framework::dataset::make("Batches", 1)));
 
 REGISTER_FIXTURE_DATA_TEST_CASE(GoogLeNetInceptionV4BatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::ALL,
-                                framework::dataset::combine(framework::dataset::combine(datasets::GoogLeNetInceptionV4BatchNormalizationLayerDataset(), data_types),
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::GoogLeNetInceptionV4BatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
                                                             framework::dataset::make("Batches", 1)));
 
 TEST_SUITE(NIGHTLY)
+REGISTER_FIXTURE_DATA_TEST_CASE(MobileNetBatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::NIGHTLY,
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::MobileNetBatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
+                                                            framework::dataset::make("Batches", { 4, 8 })));
 REGISTER_FIXTURE_DATA_TEST_CASE(YOLOV2BatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::NIGHTLY,
-                                framework::dataset::combine(framework::dataset::combine(datasets::YOLOV2BatchNormalizationLayerDataset(), data_types),
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::YOLOV2BatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
                                                             framework::dataset::make("Batches", { 4, 8 })));
 
 REGISTER_FIXTURE_DATA_TEST_CASE(GoogLeNetInceptionV4BatchNormalizationLayer, NEBatchNormalizationLayerFixture, framework::DatasetMode::NIGHTLY,
-                                framework::dataset::combine(framework::dataset::combine(datasets::GoogLeNetInceptionV4BatchNormalizationLayerDataset(), data_types),
+                                framework::dataset::combine(framework::dataset::combine(framework::dataset::combine(datasets::GoogLeNetInceptionV4BatchNormalizationLayerDataset(),
+                                                                                                                    framework::dataset::make("ActivationInfo", ActivationLayerInfo())),
+                                                                                        data_types),
                                                             framework::dataset::make("Batches", { 4, 8 })));
 TEST_SUITE_END()
 TEST_SUITE_END()

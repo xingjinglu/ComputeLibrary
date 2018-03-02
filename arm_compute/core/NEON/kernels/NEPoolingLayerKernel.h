@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -34,6 +34,10 @@ class ITensor;
 class NEPoolingLayerKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEPoolingLayerKernel";
+    }
     /** Default constructor */
     NEPoolingLayerKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -50,11 +54,22 @@ public:
      *
      * @note QS8, QS16 and F16 are supported for pool sizes 2 and 3 only
      *
-     * @param[in]  input     Source tensor. Data types supported: QS8/QS16/F16/F32.
+     * @param[in]  input     Source tensor. Data types supported: QS8/QASYMM8/QS16/F16/F32.
      * @param[out] output    Destination tensor. Data types supported: Same as @p input.
      * @param[in]  pool_info Contains pooling operation information described in @ref PoolingLayerInfo.
      */
     void configure(const ITensor *input, ITensor *output, const PoolingLayerInfo &pool_info);
+    /** Static function to check if given info will lead to a valid configuration of @ref NEPoolingLayerKernel
+     *
+     * @note QS8, QS16 and F16 are supported for pool sizes 2 and 3 only
+     *
+     * @param[in] input     Source tensor. Data types supported: QS8/QASYMM8/QS16/F16/F32.
+     * @param[in] output    Destination tensor. Data types supported: Same as @p input.
+     * @param[in] pool_info Contains pooling operation information described in @ref PoolingLayerInfo.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output, const PoolingLayerInfo &pool_info);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;
@@ -66,16 +81,15 @@ private:
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
-    template <PoolingType pooling_type>
+    template <PoolingType pooling_type, bool exclude_padding = false>
     void pooling2_f32(const Window &window_input, const Window &window);
     /** Function to perform 2x2 pooling for float16_t.
      *
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
-    template <PoolingType pooling_type>
+    template <PoolingType pooling_type, bool exclude_padding = false>
     void pooling2_f16(const Window &window_input, const Window &window);
-
     /** Function to perform 2x2 pooling for 8bit fixed point.
      *
      * @param[in] window_input Input region on which to execute the kernel.
@@ -83,6 +97,13 @@ private:
      */
     template <PoolingType pooling_type>
     void pooling2_q8(const Window &window_input, const Window &window);
+    /** Function to perform 2x2 pooling for 8bit asymmetric fixed point.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type, bool exclude_padding = false>
+    void pooling2_qasymm8(const Window &window_input, const Window &window);
     /** Function to perform 2x2 pooling for 16bit fixed point.
      *
      * @param[in] window_input Input region on which to execute the kernel.
@@ -95,14 +116,14 @@ private:
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
-    template <PoolingType pooling_type>
+    template <PoolingType pooling_type, bool exclude_padding = false>
     void pooling3_f32(const Window &window_input, const Window &window);
     /** Function to perform 3x3 pooling.
      *
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
-    template <PoolingType pooling_type>
+    template <PoolingType pooling_type, bool exclude_padding = false>
     void pooling3_f16(const Window &window_input, const Window &window);
     /** Function to perform 3x3 pooling for 8bit fixed point.
      *
@@ -111,6 +132,13 @@ private:
      */
     template <PoolingType pooling_type>
     void pooling3_q8(const Window &window_input, const Window &window);
+    /** Function to perform 3x3 pooling for 8bit quantized fixed point.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type, bool exclude_padding = false>
+    void pooling3_qasymm8(const Window &window_input, const Window &window);
     /** Function to perform 3x3 pooling for 16bit fixed point.
      *
      * @param[in] window_input Input region on which to execute the kernel.
@@ -123,15 +151,43 @@ private:
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
-    template <PoolingType pooling_type>
+    template <PoolingType pooling_type, bool exclude_padding = false>
     void pooling7_f32(const Window &window_input, const Window &window);
-    /** Function to perform NxN pooling.
+    /** Function to perform MxN pooling for 8bit fixed point.
      *
      * @param[in] window_input Input region on which to execute the kernel.
      * @param[in] window       Output region on which to execute the kernel.
      */
     template <PoolingType pooling_type>
-    void poolingN_f32(const Window &window_input, const Window &window);
+    void poolingMxN_q8(const Window &window_input, const Window &window);
+    /** Function to perform MxN pooling for 8-bit quantized.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type, bool exclude_padding = false>
+    void poolingMxN_qasymm8(const Window &window_input, const Window &window);
+    /** Function to perform MxN pooling for 16bit fixed point.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type>
+    void poolingMxN_q16(const Window &window_input, const Window &window);
+    /** Function to perform MxN pooling for 16-bit floating point values.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type, bool exclude_padding = false>
+    void poolingMxN_f16(const Window &window_input, const Window &window);
+    /** Function to perform MxN pooling for 32-bit floating point values.
+     *
+     * @param[in] window_input Input region on which to execute the kernel.
+     * @param[in] window       Output region on which to execute the kernel.
+     */
+    template <PoolingType pooling_type, bool exclude_padding = false>
+    void poolingMxN_f32(const Window &window_input, const Window &window);
     /** Common signature for all the specialised Pooling functions
      *
      * @param[in] window_input Input region on which to execute the kernel.
@@ -144,8 +200,9 @@ private:
     const ITensor   *_input;
     ITensor         *_output;
     PoolingLayerInfo _pool_info;
-    int              _num_elems_processed_per_iteration;
+    unsigned int     _num_elems_processed_per_iteration;
     BorderSize       _border_size;
+    bool             _is_square;
 };
 } // namespace arm_compute
 #endif /*__ARM_COMPUTE_NEPOOLINGLAYERKERNEL_H__ */

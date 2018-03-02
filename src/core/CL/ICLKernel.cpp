@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -43,14 +43,20 @@ void arm_compute::enqueue(cl::CommandQueue &queue, ICLKernel &kernel, const Wind
         return;
     }
 
-    if((window.x().end() - window.x().start()) == 0 || (window.y().end() - window.y().start()) == 0)
+    for(unsigned int i = 0; i < Coordinates::num_max_dimensions; ++i)
+    {
+        ARM_COMPUTE_ERROR_ON(window[i].step() == 0);
+        // Make sure that dimensions > Z are 1
+        ARM_COMPUTE_ERROR_ON((i >= 3) && ((window[i].end() - window[i].start()) != 1));
+    }
+
+    cl::NDRange gws = ICLKernel::gws_from_window(window);
+
+    // Check for empty NDRange
+    if(gws.dimensions() == 0)
     {
         return;
     }
-
-    cl::NDRange gws((window.x().end() - window.x().start()) / window.x().step(),
-                    (window.y().end() - window.y().start()) / window.y().step(),
-                    (window.z().end() - window.z().start()) / window.z().step());
 
     cl::NDRange valid_lws;
     if(lws_hint[0] * lws_hint[1] * lws_hint[2] > kernel.get_max_workgroup_size())
@@ -72,16 +78,6 @@ void arm_compute::enqueue(cl::CommandQueue &queue, ICLKernel &kernel, const Wind
     queue.enqueueNDRangeKernel(kernel.kernel(), cl::NullRange, gws, lws);
 }
 
-ICLKernel::ICLKernel()
-    : _kernel(nullptr), _lws_hint(CLKernelLibrary::get().default_ndrange()), _target(GPUTarget::MIDGARD), _config_id(arm_compute::default_config_id), _max_workgroup_size(0)
-{
-}
-
-cl::Kernel &ICLKernel::kernel()
-{
-    return _kernel;
-}
-
 template <unsigned int dimension_size>
 void ICLKernel::add_tensor_argument(unsigned &idx, const ICLTensor *tensor, const Window &window)
 {
@@ -101,10 +97,10 @@ void ICLKernel::add_tensor_argument(unsigned &idx, const ICLTensor *tensor, cons
     unsigned int idx_start = idx;
     _kernel.setArg(idx++, tensor->cl_buffer());
 
-    for(unsigned int dimension = 0; dimension < dimension_size; dimension++)
+    for(unsigned int d = 0; d < dimension_size; ++d)
     {
-        _kernel.setArg<cl_uint>(idx++, strides[dimension]);
-        _kernel.setArg<cl_uint>(idx++, strides[dimension] * window[dimension].step());
+        _kernel.setArg<cl_uint>(idx++, strides[d]);
+        _kernel.setArg<cl_uint>(idx++, strides[d] * window[d].step());
     }
 
     _kernel.setArg<cl_uint>(idx++, offset_first_element);
@@ -114,64 +110,14 @@ void ICLKernel::add_tensor_argument(unsigned &idx, const ICLTensor *tensor, cons
     ARM_COMPUTE_UNUSED(idx_start);
 }
 
-void ICLKernel::add_1D_tensor_argument(unsigned int &idx, const ICLTensor *tensor, const Window &window)
-{
-    add_tensor_argument<1>(idx, tensor, window);
-}
-
-void ICLKernel::add_2D_tensor_argument(unsigned int &idx, const ICLTensor *tensor, const Window &window)
-{
-    add_tensor_argument<2>(idx, tensor, window);
-}
-
-void ICLKernel::add_3D_tensor_argument(unsigned int &idx, const ICLTensor *tensor, const Window &window)
-{
-    add_tensor_argument<3>(idx, tensor, window);
-}
-
-void ICLKernel::add_4D_tensor_argument(unsigned int &idx, const ICLTensor *tensor, const Window &window)
-{
-    add_tensor_argument<4>(idx, tensor, window);
-}
-
-unsigned int ICLKernel::num_arguments_per_1D_array() const
-{
-    return num_arguments_per_array<1>();
-}
-
-unsigned int ICLKernel::num_arguments_per_1D_tensor() const
-{
-    return num_arguments_per_tensor<1>();
-}
-
-unsigned int ICLKernel::num_arguments_per_2D_tensor() const
-{
-    return num_arguments_per_tensor<2>();
-}
-
-unsigned int ICLKernel::num_arguments_per_3D_tensor() const
-{
-    return num_arguments_per_tensor<3>();
-}
-
-unsigned int ICLKernel::num_arguments_per_4D_tensor() const
-{
-    return num_arguments_per_tensor<4>();
-}
+template void ICLKernel::add_tensor_argument<1>(unsigned &idx, const ICLTensor *tensor, const Window &window);
+template void ICLKernel::add_tensor_argument<2>(unsigned &idx, const ICLTensor *tensor, const Window &window);
+template void ICLKernel::add_tensor_argument<3>(unsigned &idx, const ICLTensor *tensor, const Window &window);
+template void ICLKernel::add_tensor_argument<4>(unsigned &idx, const ICLTensor *tensor, const Window &window);
 
 void ICLKernel::set_target(cl::Device &device)
 {
     _target = get_target_from_device(device);
-}
-
-void ICLKernel::set_target(GPUTarget target)
-{
-    _target = target;
-}
-
-GPUTarget ICLKernel::get_target() const
-{
-    return _target;
 }
 
 size_t ICLKernel::get_max_workgroup_size()
@@ -181,4 +127,18 @@ size_t ICLKernel::get_max_workgroup_size()
         _max_workgroup_size = CLKernelLibrary::get().max_local_workgroup_size(_kernel);
     }
     return _max_workgroup_size;
+}
+
+cl::NDRange ICLKernel::gws_from_window(const Window &window)
+{
+    if((window.x().end() - window.x().start()) == 0 || (window.y().end() - window.y().start()) == 0)
+    {
+        return cl::NullRange;
+    }
+
+    cl::NDRange gws((window.x().end() - window.x().start()) / window.x().step(),
+                    (window.y().end() - window.y().start()) / window.y().step(),
+                    (window.z().end() - window.z().start()) / window.z().step());
+
+    return gws;
 }

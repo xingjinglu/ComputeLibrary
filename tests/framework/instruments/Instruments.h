@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -25,7 +25,9 @@
 #define ARM_COMPUTE_TEST_INSTRUMENTS
 
 #include "MaliCounter.h"
+#include "OpenCLTimer.h"
 #include "PMUCounter.h"
+#include "SchedulerTimer.h"
 #include "WallClockTimer.h"
 
 #include <sstream>
@@ -46,11 +48,15 @@ enum class InstrumentType : unsigned int
     PMU_CYCLE_COUNTER       = 0x0201,
     PMU_INSTRUCTION_COUNTER = 0x0202,
     MALI                    = 0x0300,
+    OPENCL_TIMER            = 0x0400,
+    SCHEDULER_TIMER         = 0x0500,
 };
 
-InstrumentType instrument_type_from_name(const std::string &name);
+using InstrumentsDescription = std::pair<InstrumentType, ScaleFactor>;
 
-inline ::std::stringstream &operator>>(::std::stringstream &stream, InstrumentType &instrument)
+InstrumentsDescription instrument_type_from_name(const std::string &name);
+
+inline ::std::stringstream &operator>>(::std::stringstream &stream, InstrumentsDescription &instrument)
 {
     std::string value;
     stream >> value;
@@ -58,15 +64,57 @@ inline ::std::stringstream &operator>>(::std::stringstream &stream, InstrumentTy
     return stream;
 }
 
-inline ::std::stringstream &operator<<(::std::stringstream &stream, InstrumentType instrument)
+inline ::std::stringstream &operator<<(::std::stringstream &stream, InstrumentsDescription instrument)
 {
-    switch(instrument)
+    switch(instrument.first)
     {
         case InstrumentType::WALL_CLOCK_TIMER:
-            stream << "WALL_CLOCK_TIMER";
+            switch(instrument.second)
+            {
+                case ScaleFactor::NONE:
+                    stream << "WALL_CLOCK_TIMER";
+                    break;
+                case ScaleFactor::TIME_MS:
+                    stream << "WALL_CLOCK_TIMER_MS";
+                    break;
+                case ScaleFactor::TIME_S:
+                    stream << "WALL_CLOCK_TIMER_S";
+                    break;
+                default:
+                    throw std::invalid_argument("Unsupported instrument scale");
+            }
+            break;
+        case InstrumentType::SCHEDULER_TIMER:
+            switch(instrument.second)
+            {
+                case ScaleFactor::NONE:
+                    stream << "SCHEDULER_TIMER";
+                    break;
+                case ScaleFactor::TIME_MS:
+                    stream << "SCHEDULER_TIMER_MS";
+                    break;
+                case ScaleFactor::TIME_S:
+                    stream << "SCHEDULER_TIMER_S";
+                    break;
+                default:
+                    throw std::invalid_argument("Unsupported instrument scale");
+            }
             break;
         case InstrumentType::PMU:
-            stream << "PMU";
+            switch(instrument.second)
+            {
+                case ScaleFactor::NONE:
+                    stream << "PMU";
+                    break;
+                case ScaleFactor::SCALE_1K:
+                    stream << "PMU_K";
+                    break;
+                case ScaleFactor::SCALE_1M:
+                    stream << "PMU_M";
+                    break;
+                default:
+                    throw std::invalid_argument("Unsupported instrument scale");
+            }
             break;
         case InstrumentType::PMU_CYCLE_COUNTER:
             stream << "PMU_CYCLE_COUNTER";
@@ -75,7 +123,39 @@ inline ::std::stringstream &operator<<(::std::stringstream &stream, InstrumentTy
             stream << "PMU_INSTRUCTION_COUNTER";
             break;
         case InstrumentType::MALI:
-            stream << "MALI";
+            switch(instrument.second)
+            {
+                case ScaleFactor::NONE:
+                    stream << "MALI";
+                    break;
+                case ScaleFactor::SCALE_1K:
+                    stream << "MALI_K";
+                    break;
+                case ScaleFactor::SCALE_1M:
+                    stream << "MALI_M";
+                    break;
+                default:
+                    throw std::invalid_argument("Unsupported instrument scale");
+            }
+            break;
+        case InstrumentType::OPENCL_TIMER:
+            switch(instrument.second)
+            {
+                case ScaleFactor::NONE:
+                    stream << "OPENCL_TIMER";
+                    break;
+                case ScaleFactor::TIME_US:
+                    stream << "OPENCL_TIMER_US";
+                    break;
+                case ScaleFactor::TIME_MS:
+                    stream << "OPENCL_TIMER_MS";
+                    break;
+                case ScaleFactor::TIME_S:
+                    stream << "OPENCL_TIMER_S";
+                    break;
+                default:
+                    throw std::invalid_argument("Unsupported instrument scale");
+            }
             break;
         case InstrumentType::ALL:
             stream << "ALL";

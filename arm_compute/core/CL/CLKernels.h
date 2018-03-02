@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -42,9 +42,10 @@
 #include "arm_compute/core/CL/kernels/CLCol2ImKernel.h"
 #include "arm_compute/core/CL/kernels/CLColorConvertKernel.h"
 #include "arm_compute/core/CL/kernels/CLConvolutionKernel.h"
-#include "arm_compute/core/CL/kernels/CLDepthConcatenateKernel.h"
-#include "arm_compute/core/CL/kernels/CLDepthConvertKernel.h"
-#include "arm_compute/core/CL/kernels/CLDepthwiseConvolution3x3Kernel.h"
+#include "arm_compute/core/CL/kernels/CLDeconvolutionLayerUpsampleKernel.h"
+#include "arm_compute/core/CL/kernels/CLDepthConcatenateLayerKernel.h"
+#include "arm_compute/core/CL/kernels/CLDepthConvertLayerKernel.h"
+#include "arm_compute/core/CL/kernels/CLDepthwiseConvolutionLayer3x3Kernel.h"
 #include "arm_compute/core/CL/kernels/CLDepthwiseIm2ColKernel.h"
 #include "arm_compute/core/CL/kernels/CLDepthwiseVectorToTensorKernel.h"
 #include "arm_compute/core/CL/kernels/CLDepthwiseWeightsReshapeKernel.h"
@@ -52,12 +53,17 @@
 #include "arm_compute/core/CL/kernels/CLDerivativeKernel.h"
 #include "arm_compute/core/CL/kernels/CLDilateKernel.h"
 #include "arm_compute/core/CL/kernels/CLDirectConvolutionLayerKernel.h"
+#include "arm_compute/core/CL/kernels/CLDirectConvolutionLayerOutputStageKernel.h"
 #include "arm_compute/core/CL/kernels/CLErodeKernel.h"
 #include "arm_compute/core/CL/kernels/CLFastCornersKernel.h"
 #include "arm_compute/core/CL/kernels/CLFillBorderKernel.h"
 #include "arm_compute/core/CL/kernels/CLFloorKernel.h"
 #include "arm_compute/core/CL/kernels/CLGEMMInterleave4x4Kernel.h"
 #include "arm_compute/core/CL/kernels/CLGEMMLowpMatrixMultiplyKernel.h"
+#include "arm_compute/core/CL/kernels/CLGEMMLowpOffsetContributionKernel.h"
+#include "arm_compute/core/CL/kernels/CLGEMMLowpQuantizeDownInt32ToUint8ScaleByFixedPointKernel.h"
+#include "arm_compute/core/CL/kernels/CLGEMMLowpQuantizeDownInt32ToUint8ScaleKernel.h"
+#include "arm_compute/core/CL/kernels/CLGEMMLowpReductionKernel.h"
 #include "arm_compute/core/CL/kernels/CLGEMMMatrixAccumulateBiasesKernel.h"
 #include "arm_compute/core/CL/kernels/CLGEMMMatrixAdditionKernel.h"
 #include "arm_compute/core/CL/kernels/CLGEMMMatrixMultiplyKernel.h"
@@ -72,7 +78,7 @@
 #include "arm_compute/core/CL/kernels/CLHistogramKernel.h"
 #include "arm_compute/core/CL/kernels/CLIm2ColKernel.h"
 #include "arm_compute/core/CL/kernels/CLIntegralImageKernel.h"
-#include "arm_compute/core/CL/kernels/CLL2NormalizeKernel.h"
+#include "arm_compute/core/CL/kernels/CLL2NormalizeLayerKernel.h"
 #include "arm_compute/core/CL/kernels/CLLKTrackerKernel.h"
 #include "arm_compute/core/CL/kernels/CLLocallyConnectedMatrixMultiplyKernel.h"
 #include "arm_compute/core/CL/kernels/CLMagnitudePhaseKernel.h"
@@ -83,6 +89,7 @@
 #include "arm_compute/core/CL/kernels/CLNonLinearFilterKernel.h"
 #include "arm_compute/core/CL/kernels/CLNonMaximaSuppression3x3Kernel.h"
 #include "arm_compute/core/CL/kernels/CLNormalizationLayerKernel.h"
+#include "arm_compute/core/CL/kernels/CLPermuteKernel.h"
 #include "arm_compute/core/CL/kernels/CLPixelWiseMultiplicationKernel.h"
 #include "arm_compute/core/CL/kernels/CLPoolingLayerKernel.h"
 #include "arm_compute/core/CL/kernels/CLQuantizationLayerKernel.h"

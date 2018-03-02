@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -24,7 +24,10 @@
 #ifndef ARM_COMPUTE_HELPER_H
 #define ARM_COMPUTE_HELPER_H
 
+#if defined(ARM_COMPUTE_OPENCL_FP16_ENABLED)
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
+#endif // defined(ARM_COMPUTE_OPENCL_FP16_ENABLED)
+
 #if defined(ARM_COMPUTE_DEBUG_ENABLED)
 #pragma OPENCL EXTENSION cl_arm_printf : enable
 #endif // defined(ARM_COMPUTE_DEBUG_ENABLED)
@@ -41,6 +44,9 @@
 
 #define VEC_DATA_TYPE_STR(type, size) type##size
 #define VEC_DATA_TYPE(type, size) VEC_DATA_TYPE_STR(type, size)
+
+#define CL_VEC_DATA_TYPE_STR(type, size) type##size
+#define CL_VEC_DATA_TYPE(type, size) CL_VEC_DATA_TYPE_STR(type, size)
 
 #define CONVERT_STR(x, type) (convert_##type((x)))
 #define CONVERT(x, type) CONVERT_STR(x, type)
@@ -117,7 +123,7 @@
 
 #define CONVERT_TO_TENSOR4D_STRUCT(name, mod_size)                                                                                                 \
     update_tensor4D_workitem_ptr(name##_ptr, name##_offset_first_element_in_bytes, name##_stride_x, name##_step_x, name##_stride_y, name##_step_y, \
-                                 name##_stride_z, name##_step_z, name##_stride_w, name##_step_z, mod_size)
+                                 name##_stride_z, name##_step_z, name##_stride_w, name##_step_w, mod_size)
 
 #define CONVERT_TO_TENSOR4D_STRUCT_NO_STEP(name, mod_size) \
     update_tensor4D_workitem_ptr(name##_ptr, name##_offset_first_element_in_bytes, name##_stride_x, 0, name##_stride_y, 0, name##_stride_z, 0, name##_stride_w, 0, mod_size)

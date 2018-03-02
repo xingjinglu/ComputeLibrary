@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -35,6 +35,10 @@ class ITensor;
 class NEScaleKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEScaleKernel";
+    }
     /** Default constructor */
     NEScaleKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -59,8 +63,10 @@ public:
      * @param[out] output           Destination tensor. Data types supported: Same as @p input. All but the lowest two dimensions must be the same size as in the input tensor, i.e. scaling is only performed within the XY-plane.
      * @param[in]  policy           Interpolation type to use
      * @param[in]  border_undefined True if the border mode is undefined. False if it's replicate or constant.
+     * @param[in]  sampling_policy  (Optional) Sampling policy used by the interpolation. Defaults to @ref SamplingPolicy::CENTER
      */
-    void configure(const ITensor *input, const ITensor *dx, const ITensor *dy, const ITensor *offsets, ITensor *output, InterpolationPolicy policy, bool border_undefined);
+    void configure(const ITensor *input, const ITensor *dx, const ITensor *dy, const ITensor *offsets, ITensor *output, InterpolationPolicy policy, bool border_undefined,
+                   SamplingPolicy sampling_policy = SamplingPolicy::CENTER);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;

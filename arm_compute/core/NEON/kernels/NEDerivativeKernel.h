@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -36,6 +36,10 @@ class ITensor;
 class NEDerivativeKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEDerivativeKernel";
+    }
     /** Default constructor */
     NEDerivativeKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -64,17 +68,17 @@ public:
 private:
     /** Function to perform derivative along the X direction on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void derivative_x(const Window &window);
     /** Function to perform derivative along the Y direction on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void derivative_y(const Window &window);
     /** Function to perform derivative along the X and Y direction on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void derivative_xy(const Window &window);
     /** Common signature for all the specialised derivative functions

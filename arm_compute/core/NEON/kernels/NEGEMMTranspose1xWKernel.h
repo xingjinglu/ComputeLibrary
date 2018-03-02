@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -51,10 +51,10 @@ class ITensor;
  *
  * @f[
  * \left( \begin{array}{cccccccc}
- * a00 & a01 & a02 & a03 & a04 & a05 & a06 & a7 \\
- * a10 & a11 & a12 & a13 & a14 & a15 & a16 & 17 \\
- * a20 & a21 & a22 & a23 & a24 & a25 & a26 & 27 \\
- * a30 & a31 & a32 & a33 & a34 & a35 & a36 & 37 \\
+ * a00 & a01 & a02 & a03 & a04 & a05 & a06 & a07 \\
+ * a10 & a11 & a12 & a13 & a14 & a15 & a16 & a17 \\
+ * a20 & a21 & a22 & a23 & a24 & a25 & a26 & a27 \\
+ * a30 & a31 & a32 & a33 & a34 & a35 & a36 & a37 \\
  * \end{array} \right)
  * \rightarrow
  * \left( \begin{array}{cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc}
@@ -68,12 +68,24 @@ class ITensor;
 class NEGEMMTranspose1xWKernel : public INESimpleKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEGEMMTranspose1xWKernel";
+    }
     /** Initialise the kernel's input and output.
      *
-     * @param[in]  input  Input tensor. Data types supported: U8/S8/QS8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in]  input  Input tensor. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
      * @param[out] output Output tensor. Data type supported: same as @p input.
      */
     void configure(const ITensor *input, ITensor *output);
+    /** Static function to check if given info will lead to a valid configuration of @ref NEGEMMTranspose1xWKernel
+     *
+     * @param[in] input  Input tensor info. Data types supported: U8/S8/QS8/QASYMM8/U16/S16/QS16/F16/U32/S32/F32
+     * @param[in] output Output tensor info. Data type supported: same as @p input.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *output);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;

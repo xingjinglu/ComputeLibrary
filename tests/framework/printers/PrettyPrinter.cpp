@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -24,6 +24,7 @@
 #include "PrettyPrinter.h"
 
 #include "../Framework.h"
+#include "../instruments/InstrumentsStats.h"
 #include "../instruments/Measurement.h"
 
 #include <algorithm>
@@ -108,38 +109,31 @@ void PrettyPrinter::print_error(const std::exception &error, bool expected)
     *_stream << begin_color("1") << prefix << error.what() << end_color() << "\n";
 }
 
+void PrettyPrinter::print_list_tests(const std::vector<TestInfo> &infos)
+{
+    for(auto info : infos)
+    {
+        *_stream << "[" << info.id << ", " << info.mode << ", " << info.status << "] " << info.name << "\n";
+    }
+}
 void PrettyPrinter::print_measurements(const Profiler::MeasurementsMap &measurements)
 {
     for(const auto &instrument : measurements)
     {
         *_stream << begin_color("3") << "  " << instrument.first << ":";
 
-        auto add_measurements = [](double a, const Measurement & b)
-        {
-            return a + b.value;
-        };
-
-        auto cmp_measurements = [](const Measurement & a, const Measurement & b)
-        {
-            return a.value < b.value;
-        };
-
-        double     sum_values    = std::accumulate(instrument.second.begin(), instrument.second.end(), 0., add_measurements);
-        int        num_values    = instrument.second.size();
-        const auto minmax_values = std::minmax_element(instrument.second.begin(), instrument.second.end(), cmp_measurements);
-
-        if(num_values > 2)
-        {
-            sum_values -= minmax_values.first->value + minmax_values.second->value;
-            num_values -= 2;
-        }
-
-        Measurement avg{ sum_values / num_values, minmax_values.first->unit };
+        InstrumentsStats stats(instrument.second);
 
         *_stream << "    ";
-        *_stream << "AVG=" << avg << ", ";
-        *_stream << "MIN=" << *minmax_values.first << ", ";
-        *_stream << "MAX=" << *minmax_values.second << end_color() << "\n";
+        *_stream << "AVG=" << stats.mean() << " " << stats.max().unit();
+        if(instrument.second.size() > 1)
+        {
+            *_stream << ", STDDEV=" << arithmetic_to_string(stats.relative_standard_deviation(), 2) << " %";
+            *_stream << ", MIN=" << stats.min() << ", ";
+            *_stream << ", MAX=" << stats.max() << ", ";
+            *_stream << ", MEDIAN=" << stats.median().value() << " " << stats.median().unit();
+        }
+        *_stream << end_color() << "\n";
     }
 }
 } // namespace framework

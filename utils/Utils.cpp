@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -66,14 +66,17 @@ void discard_comments_and_spaces(std::ifstream &fs)
 }
 } // namespace
 
-int run_example(int argc, const char **argv, example &func)
+#ifndef BENCHMARK_EXAMPLES
+int run_example(int argc, char **argv, Example &example)
 {
     std::cout << "\n"
               << argv[0] << "\n\n";
 
     try
     {
-        func(argc, argv);
+        example.do_setup(argc, argv);
+        example.do_run();
+        example.do_teardown();
 
         std::cout << "\nTest passed\n";
         return 0;
@@ -99,6 +102,7 @@ int run_example(int argc, const char **argv, example &func)
 
     return -1;
 }
+#endif /* BENCHMARK_EXAMPLES */
 
 void draw_detection_rectangle(ITensor *tensor, const DetectionWindow &rect, uint8_t r, uint8_t g, uint8_t b)
 {
@@ -166,6 +170,60 @@ std::tuple<unsigned int, unsigned int, int> parse_ppm_header(std::ifstream &fs)
     fs.ignore(1);
 
     return std::make_tuple(width, height, max_val);
+}
+
+std::tuple<std::vector<unsigned long>, bool, std::string> parse_npy_header(std::ifstream &fs) //NOLINT
+{
+    std::vector<unsigned long> shape; // NOLINT
+
+    // Read header
+    std::string header = npy::read_header(fs);
+
+    // Parse header
+    bool        fortran_order = false;
+    std::string typestr;
+    npy::parse_header(header, typestr, fortran_order, shape);
+
+    if(!fortran_order)
+    {
+        std::reverse(shape.begin(), shape.end());
+    }
+
+    return std::make_tuple(shape, fortran_order, typestr);
+}
+
+/** This function returns the amount of memory free reading from /proc/meminfo
+ *
+ * @return The free memory in kB
+ */
+uint64_t get_mem_free_from_meminfo()
+{
+    std::string   line_attribute;
+    std::ifstream file_meminfo("/proc/meminfo");
+
+    if(file_meminfo.is_open())
+    {
+        while(!(file_meminfo >> line_attribute).fail())
+        {
+            //Test if is the line containing MemFree
+            if(line_attribute == "MemFree:")
+            {
+                uint64_t mem_available;
+                if(!(file_meminfo >> mem_available).fail())
+                {
+                    return mem_available;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+            // if it's not MemFree ignore rest of the line
+            file_meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+    }
+    // Nothing found or an error during opening the file
+    return 0;
 }
 } // namespace utils
 } // namespace arm_compute

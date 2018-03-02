@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -34,6 +34,10 @@ class ITensor;
 class NEDirectConvolutionLayerKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEDirectConvolutionLayerKernel";
+    }
     /** Default constructor */
     NEDirectConvolutionLayerKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -58,10 +62,24 @@ public:
      *                       The 3rd dimension must be the same as the input's volume 3rd dimension.
      *                       Data type supported:Same as @p input.
      * @param[out] output    Output tensor.
-     *                       The 3rd dimensions must be equal to the 4th dimension of the @p kernels tensor. Data types supported: Same as @p input.
+     *                       The 3rd dimensions must be equal to the 4th dimension of the @p kernels tensor. Data types supported: QS16/QS32/F16/F32
      * @param[in]  conv_info Contains padding and stride information described in @ref PadStrideInfo.
      */
     void configure(const ITensor *input, const ITensor *weights, ITensor *output, const PadStrideInfo &conv_info);
+    /** Static function to check if given info will lead to a valid configuration of @ref NEDirectConvolutionLayerKernel
+     *
+     * @param[in] input     The input tensor to convolve. 3 lower dimensions represent a single input [width, height, IFM],
+     *                      while every optional dimension from 4 and above represent a batch of inputs. Data types supported: QS8/QS16/F16/F32.
+     * @param[in] weights   Weights tensor. Weights are 4D tensor with dimensions [kernel_x, kernel_y, IFM, OFM].
+     *                      The 3rd dimension must be the same as the input's volume 3rd dimension.
+     *                      Data type supported:Same as @p input.
+     * @param[in] output    Output tensor.
+     *                      The 3rd dimensions must be equal to the 4th dimension of the @p kernels tensor. Data types supported: QS16/QS32/F16/F32
+     * @param[in] conv_info Contains padding and stride information described in @ref PadStrideInfo.
+     *
+     * @return a status
+     */
+    static Status validate(const ITensorInfo *input, const ITensorInfo *weights, const ITensorInfo *output, const PadStrideInfo &conv_info);
 
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -61,16 +61,17 @@ public:
         weights.allocator()->allocate();
         biases.allocator()->allocate();
         dst.allocator()->allocate();
-
-        // Fill tensors
-        library->fill_tensor_uniform(Accessor(src), 0);
-        library->fill_tensor_uniform(Accessor(weights), 1);
-        library->fill_tensor_uniform(Accessor(biases), 2);
     }
 
     void run()
     {
         fc_layer.run();
+    }
+
+    void sync()
+    {
+        sync_if_necessary<TensorType>();
+        sync_tensor_if_necessary<TensorType>(dst);
     }
 
     void teardown()

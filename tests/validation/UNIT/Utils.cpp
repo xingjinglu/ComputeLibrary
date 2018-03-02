@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -58,6 +58,20 @@ DATA_TEST_CASE(Index2Coord, framework::DatasetMode::ALL, zip(zip(framework::data
     Coordinates coordinate = index2coord(shape, index);
 
     ARM_COMPUTE_EXPECT(compare_dimensions(coordinate, ref_coordinate), framework::LogLevel::ERRORS);
+}
+
+DATA_TEST_CASE(RoundFloatToZero, framework::DatasetMode::ALL, zip(framework::dataset::make("FloatIn", { 1.f, 1.2f, 1.5f, 2.5f, 2.9f, -3.f, -3.5f, -3.8f, -4.3f, -4.5f }),
+                                                                  framework::dataset::make("FloatOut", { 1.f, 1.f, 1.f, 2.f, 2.f, -3.f, -3.f, -3.f, -4.f, -4.f })),
+               value, result)
+{
+    ARM_COMPUTE_EXPECT(round(value, RoundingPolicy::TO_ZERO) == result, framework::LogLevel::ERRORS);
+}
+
+DATA_TEST_CASE(RoundFloatToNearestUp, framework::DatasetMode::ALL, zip(framework::dataset::make("FloatIn", { 1.f, 1.2f, 1.5f, 2.5f, 2.9f, -3.f, -3.5f, -3.8f, -4.3f, -4.5f }),
+                                                                       framework::dataset::make("FloatOut", { 1.f, 1.f, 2.f, 3.f, 3.f, -3.f, -4.f, -4.f, -4.f, -5.f })),
+               value, result)
+{
+    ARM_COMPUTE_EXPECT(round(value, RoundingPolicy::TO_NEAREST_UP) == result, framework::LogLevel::ERRORS);
 }
 
 DATA_TEST_CASE(Coord2Index, framework::DatasetMode::ALL, zip(zip(framework::dataset::make("Shape", { TensorShape{ 1U }, TensorShape{ 2U }, TensorShape{ 2U, 3U } }),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -40,7 +40,7 @@ class GEMMFixture : public framework::Fixture
 {
 public:
     template <typename...>
-    void setup(TensorShape shape_a, TensorShape shape_b, TensorShape shape_c, TensorShape shape_dst, float alpha, float beta, DataType data_type)
+    void setup(TensorShape shape_a, TensorShape shape_b, TensorShape shape_c, TensorShape shape_dst, float alpha, float beta, DataType data_type, bool reshape_b_only_on_first_run)
     {
         constexpr int fixed_point_position = 4;
 
@@ -51,22 +51,24 @@ public:
         dst = create_tensor<TensorType>(shape_dst, data_type, 1, fixed_point_position);
 
         // Create and configure function
-        gemm.configure(&a, &b, &c, &dst, alpha, beta);
+        gemm.configure(&a, &b, &c, &dst, alpha, beta, GEMMInfo(false, false, reshape_b_only_on_first_run));
 
         // Allocate tensors
         a.allocator()->allocate();
         b.allocator()->allocate();
         c.allocator()->allocate();
         dst.allocator()->allocate();
-
-        library->fill_tensor_uniform(Accessor(a), 0);
-        library->fill_tensor_uniform(Accessor(b), 1);
-        library->fill_tensor_uniform(Accessor(c), 2);
     }
 
     void run()
     {
         gemm.run();
+    }
+
+    void sync()
+    {
+        sync_if_necessary<TensorType>();
+        sync_tensor_if_necessary<TensorType>(dst);
     }
 
     void teardown()

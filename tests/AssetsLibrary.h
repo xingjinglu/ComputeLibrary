@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -275,6 +275,17 @@ public:
      */
     void fill(RawTensor &raw, const std::string &name, Format format, Channel channel) const;
 
+    /** Fills the specified @p tensor with the content of the raw tensor.
+     *
+     * @param[in, out] tensor To be filled tensor.
+     * @param[in]      raw    Raw tensor used to fill the tensor.
+     *
+     * @warning No check is performed that the specified format actually
+     *          matches the format of the tensor.
+     */
+    template <typename T>
+    void fill(T &&tensor, RawTensor raw) const;
+
     /** Fill a tensor with uniform distribution across the range of its type
      *
      * @param[in, out] tensor      To be filled tensor.
@@ -380,7 +391,10 @@ void AssetsLibrary::fill_borders_with_garbage(T &&tensor, D &&distribution, std:
 
     Window window;
     window.set(0, Window::Dimension(-padding_size.left, tensor.shape()[0] + padding_size.right, 1));
-    window.set(1, Window::Dimension(-padding_size.top, tensor.shape()[1] + padding_size.bottom, 1));
+    if(tensor.shape().num_dimensions() > 1)
+    {
+        window.set(1, Window::Dimension(-padding_size.top, tensor.shape()[1] + padding_size.bottom, 1));
+    }
 
     std::mt19937 gen(_seed);
 
@@ -402,21 +416,24 @@ void AssetsLibrary::fill_borders_with_garbage(T &&tensor, D &&distribution, std:
 template <typename T, typename D>
 void AssetsLibrary::fill(T &&tensor, D &&distribution, std::random_device::result_type seed_offset) const
 {
-    Window window;
-    for(unsigned int d = 0; d < tensor.shape().num_dimensions(); ++d)
-    {
-        window.set(d, Window::Dimension(0, tensor.shape()[d], 1));
-    }
+    using ResultType = typename std::remove_reference<D>::type::result_type;
 
     std::mt19937 gen(_seed + seed_offset);
 
-    execute_window_loop(window, [&](const Coordinates & id)
+    // Iterate over all elements
+    for(int element_idx = 0; element_idx < tensor.num_elements(); ++element_idx)
     {
-        using ResultType         = typename std::remove_reference<D>::type::result_type;
-        const ResultType value   = distribution(gen);
-        void *const      out_ptr = tensor(id);
-        store_value_with_data_type(out_ptr, value, tensor.data_type());
-    });
+        const Coordinates id = index2coord(tensor.shape(), element_idx);
+
+        // Iterate over all channels
+        for(int channel = 0; channel < tensor.num_channels(); ++channel)
+        {
+            const ResultType value        = distribution(gen);
+            ResultType      &target_value = reinterpret_cast<ResultType *const>(tensor(id))[channel];
+
+            store_value_with_data_type(&target_value, value, tensor.data_type());
+        }
+    }
 
     fill_borders_with_garbage(tensor, distribution, seed_offset);
 }
@@ -471,11 +488,25 @@ void AssetsLibrary::fill(T &&tensor, const std::string &name, Format format, Cha
 }
 
 template <typename T>
+void AssetsLibrary::fill(T &&tensor, RawTensor raw) const
+{
+    for(size_t offset = 0; offset < raw.size(); offset += raw.element_size())
+    {
+        const Coordinates id = index2coord(raw.shape(), offset / raw.element_size());
+
+        const RawTensor::value_type *const raw_ptr = raw.data() + offset;
+        const auto                         out_ptr = static_cast<RawTensor::value_type *>(tensor(id));
+        std::copy_n(raw_ptr, raw.element_size(), out_ptr);
+    }
+}
+
+template <typename T>
 void AssetsLibrary::fill_tensor_uniform(T &&tensor, std::random_device::result_type seed_offset) const
 {
     switch(tensor.data_type())
     {
         case DataType::U8:
+        case DataType::QASYMM8:
         {
             std::uniform_int_distribution<uint8_t> distribution_u8(std::numeric_limits<uint8_t>::lowest(), std::numeric_limits<uint8_t>::max());
             fill(tensor, distribution_u8, seed_offset);
@@ -563,6 +594,7 @@ void AssetsLibrary::fill_tensor_uniform(T &&tensor, std::random_device::result_t
     switch(tensor.data_type())
     {
         case DataType::U8:
+        case DataType::QASYMM8:
         {
             ARM_COMPUTE_ERROR_ON(!(std::is_same<uint8_t, D>::value));
             std::uniform_int_distribution<uint8_t> distribution_u8(low, high);
@@ -670,30 +702,12 @@ void AssetsLibrary::fill_layer_data(T &&tensor, std::string name) const
     {
         throw framework::FileNotFound("Could not load npy file: " + path);
     }
-    // Check magic bytes and version number
-    unsigned char v_major = 0;
-    unsigned char v_minor = 0;
-    npy::read_magic(stream, &v_major, &v_minor);
-
-    // Read header
-    std::string header;
-    if(v_major == 1 && v_minor == 0)
-    {
-        header = npy::read_header_1_0(stream);
-    }
-    else if(v_major == 2 && v_minor == 0)
-    {
-        header = npy::read_header_2_0(stream);
-    }
-    else
-    {
-        ARM_COMPUTE_ERROR("Unsupported file format version");
-    }
+    std::string header = npy::read_header(stream);
 
     // Parse header
     bool        fortran_order = false;
     std::string typestr;
-    npy::ParseHeader(header, typestr, &fortran_order, shape);
+    npy::parse_header(header, typestr, fortran_order, shape);
 
     // Check if the typestring matches the given one
     std::string expect_typestr = get_typestring(tensor.data_type());

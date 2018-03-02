@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -36,6 +36,8 @@
 #include "arm_compute/core/Validate.h"
 #include "arm_compute/core/Window.h"
 
+#include "arm_compute/core/utils/misc/ShapeCalculator.h"
+
 #include <arm_neon.h>
 #include <cstddef>
 #include <cstdint>
@@ -53,7 +55,7 @@ namespace
 template <bool multiply_alpha>
 void vector_matrix_multiply_f16(const ITensor *input0, const ITensor *input1, ITensor *output, const Window &window, const ThreadInfo &info, float alpha)
 {
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
     const auto width_matrix_b  = static_cast<int>(output->info()->dimension(0));
     const auto in_b_stride     = static_cast<int>(input1->info()->strides_in_bytes()[1] / data_size_from_type(input1->info()->data_type()));
     const auto num_elems_vec_a = static_cast<int>(input0->info()->dimension(0));
@@ -186,7 +188,7 @@ void vector_matrix_multiply_f16(const ITensor *input0, const ITensor *input1, IT
 
     },
     ina, inb, out);
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
     ARM_COMPUTE_UNUSED(input0);
     ARM_COMPUTE_UNUSED(input1);
     ARM_COMPUTE_UNUSED(output);
@@ -194,7 +196,7 @@ void vector_matrix_multiply_f16(const ITensor *input0, const ITensor *input1, IT
     ARM_COMPUTE_UNUSED(info);
     ARM_COMPUTE_UNUSED(alpha);
     ARM_COMPUTE_ERROR("Not implemented");
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 }
 
 template <bool multiply_alpha>
@@ -915,7 +917,7 @@ void matrix_matrix_multiply_f32(const ITensor *input0, const ITensor *input1, IT
 template <bool multiply_alpha>
 void matrix_matrix_multiply_f16(const ITensor *input0, const ITensor *input1, ITensor *output, const Window &window, float alpha)
 {
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
     const size_t in_b_stride          = input1->info()->strides_in_bytes()[1] / data_size_from_type(input1->info()->data_type());
     const size_t out_stride           = output->info()->strides_in_bytes()[1] / data_size_from_type(output->info()->data_type());
     const int    num_elems_matrix_b_x = input1->info()->dimension(0);
@@ -1051,14 +1053,14 @@ void matrix_matrix_multiply_f16(const ITensor *input0, const ITensor *input1, IT
         vst1q_f16(mtx_out + 3 * out_stride, c.val[3]);
     },
     ina, inb, out);
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
     ARM_COMPUTE_UNUSED(input0);
     ARM_COMPUTE_UNUSED(input1);
     ARM_COMPUTE_UNUSED(output);
     ARM_COMPUTE_UNUSED(window);
     ARM_COMPUTE_UNUSED(alpha);
     ARM_COMPUTE_ERROR("Not implemented");
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 }
 
 template <bool multiply_alpha>
@@ -1408,6 +1410,175 @@ void matrix_matrix_multiply_qs16(const ITensor *input0, const ITensor *input1, I
     },
     ina, inb, out);
 }
+
+inline Status validate_arguments(const ITensorInfo *input0, const ITensorInfo *input1, const ITensorInfo *output, float alpha, bool is_interleaved, const GEMMReshapeInfo &reshape_info)
+{
+    ARM_COMPUTE_UNUSED(alpha);
+
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input0, 1, DataType::F16, DataType::F32, DataType::QS8, DataType::QS16);
+    ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input0, input1, output);
+    ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input0, input1, output);
+
+    if(!is_interleaved)
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON(input0->dimension(0) != input1->dimension(1));
+
+        if(output->total_size() != 0)
+        {
+            ARM_COMPUTE_RETURN_ERROR_ON(input1->dimension(0) != output->dimension(0));
+            ARM_COMPUTE_RETURN_ERROR_ON(input0->dimension(1) != output->dimension(1));
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input0, output);
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input0, output);
+        }
+    }
+    else
+    {
+        const int m                         = reshape_info.m();
+        const int n                         = reshape_info.n();
+        const int k                         = reshape_info.k();
+        const int mult_transpose1xW_width   = reshape_info.mult_transpose1xW_width();
+        const int mult_interleave4x4_height = reshape_info.mult_interleave4x4_height();
+
+        /* Interleave */
+        TensorShape tensor_shape0{ input0->tensor_shape() };
+        tensor_shape0.set(0, k);
+        tensor_shape0.set(1, m);
+
+        const TensorInfo tensor_info0          = input0->clone()->set_tensor_shape(tensor_shape0);
+        const TensorInfo tensor_info_reshaped0 = input0->clone()->set_tensor_shape(misc::shape_calculator::compute_interleaved_shape(tensor_info0, mult_interleave4x4_height));
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_SHAPES(input0, &tensor_info_reshaped0);
+
+        if(n != 0) /* Transpose */
+        {
+            TensorShape tensor_shape1{ input1->tensor_shape() };
+            tensor_shape1.set(0, n);
+            tensor_shape1.set(1, k);
+
+            const TensorInfo tensor_info1          = input1->clone()->set_tensor_shape(tensor_shape1);
+            const TensorInfo tensor_info_reshaped1 = input1->clone()->set_tensor_shape(misc::shape_calculator::compute_transpose1xW_with_element_size_shape(tensor_info1, mult_transpose1xW_width));
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_SHAPES(input1, &tensor_info_reshaped1);
+        }
+
+        if(output->total_size() != 0)
+        {
+            if(n != 0)
+            {
+                ARM_COMPUTE_RETURN_ERROR_ON(output->dimension(0) != static_cast<size_t>(n));
+            }
+            ARM_COMPUTE_RETURN_ERROR_ON(output->dimension(1) != static_cast<size_t>(m));
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input0, output);
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input0, output);
+        }
+    }
+
+    return Status{};
+}
+
+inline std::pair<Status, Window> validate_and_configure_window(ITensorInfo *input0, ITensorInfo *input1, ITensorInfo *output)
+{
+    bool   window_changed{};
+    Window win{};
+
+    unsigned int       num_elems_processed_per_iteration_x = 0;
+    const unsigned int num_elems_processed_per_iteration_y = 4;
+
+    // Check if the output tensor is a vector. If so,the kernel runs the vector-matrix multiplication
+    if((output->dimension(1) == 1))
+    {
+        switch(input0->data_type())
+        {
+            case DataType::F32:
+            {
+                num_elems_processed_per_iteration_x = 16;
+                break;
+            }
+            case DataType::QS8:
+            {
+                num_elems_processed_per_iteration_x = 32;
+                break;
+            }
+            case DataType::QS16:
+            {
+                num_elems_processed_per_iteration_x = 16;
+                break;
+            }
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+            case DataType::F16:
+            {
+                num_elems_processed_per_iteration_x = 32;
+                break;
+            }
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
+            default:
+            {
+                ARM_COMPUTE_ERROR("Data type not supported");
+                break;
+            }
+        }
+
+        // Configure kernel window
+        win = calculate_max_window(*output, Steps(num_elems_processed_per_iteration_x));
+
+        AccessWindowHorizontal output_access(output, 0, num_elems_processed_per_iteration_x);
+
+        window_changed = update_window_and_padding(win,
+                                                   AccessWindowStatic(input0, 0, 0, input0->tensor_shape().x(), 1),
+                                                   AccessWindowHorizontal(input1, 0, num_elems_processed_per_iteration_x),
+                                                   output_access);
+
+        Coordinates coord;
+        coord.set_num_dimensions(output->num_dimensions());
+        output_access.set_valid_region(win, ValidRegion(coord, output->tensor_shape()));
+    }
+    else
+    {
+        switch(input0->data_type())
+        {
+            case DataType::F32:
+            {
+                num_elems_processed_per_iteration_x = 8;
+                break;
+            }
+            case DataType::QS8:
+            {
+                num_elems_processed_per_iteration_x = 32;
+                break;
+            }
+            case DataType::QS16:
+            {
+                num_elems_processed_per_iteration_x = 8;
+                break;
+            }
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+            case DataType::F16:
+            {
+                num_elems_processed_per_iteration_x = 8;
+                break;
+            }
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
+            default:
+            {
+                ARM_COMPUTE_ERROR("Data type not supported");
+                break;
+            }
+        }
+
+        // Configure kernel window
+        win = calculate_max_window(*output, Steps(num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y));
+
+        AccessWindowRectangle output_access(output, 0, 0, num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y);
+
+        window_changed = update_window_and_padding(win,
+                                                   AccessWindowRectangle(input0, 0, 0, 4, 1, 1.f, 0.25f),
+                                                   AccessWindowStatic(input1, 0, 0, input1->tensor_shape().x(), ceil_to_multiple(input1->tensor_shape().y(), 4)),
+                                                   output_access);
+
+        output_access.set_valid_region(win, ValidRegion(Coordinates(0, 0), output->tensor_shape()));
+    }
+
+    Status err = (window_changed) ? ARM_COMPUTE_CREATE_ERROR(ErrorCode::RUNTIME_ERROR, "Insufficient Padding!") : Status{};
+    return std::make_pair(err, win);
+}
 } // namespace
 
 NEGEMMMatrixMultiplyKernel::NEGEMMMatrixMultiplyKernel()
@@ -1415,122 +1586,38 @@ NEGEMMMatrixMultiplyKernel::NEGEMMMatrixMultiplyKernel()
 {
 }
 
-void NEGEMMMatrixMultiplyKernel::configure(const ITensor *input0, const ITensor *input1, ITensor *output, float alpha)
+void NEGEMMMatrixMultiplyKernel::configure(const ITensor *input0, const ITensor *input1, ITensor *output, float alpha, bool is_interleaved, const GEMMReshapeInfo &reshape_info)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input0, 1, DataType::F16, DataType::F32, DataType::QS8, DataType::QS16);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input0, input1, output);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input0, input1, output);
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input0, input1, output);
 
-    if(output->info()->dimension(1) == 1)
-    {
-        ARM_COMPUTE_ERROR_ON(input0->info()->dimension(0) != input1->info()->dimension(1));
-    }
+    // Output tensor auto inizialitation if not yet initialized
+    TensorShape tensor_shape{ input0->info()->tensor_shape() };
+    tensor_shape.set(0, is_interleaved ? reshape_info.n() : input1->info()->dimension(0));
+    tensor_shape.set(1, is_interleaved ? reshape_info.m() : input0->info()->dimension(1));
+
+    auto_init_if_empty(*output->info(), input0->info()->clone()->set_tensor_shape(tensor_shape));
+
+    // Perform validate step
+    ARM_COMPUTE_ERROR_THROW_ON(validate_arguments(input0->info(), input1->info(), output->info(), alpha, is_interleaved, reshape_info));
 
     _input0 = input0;
     _input1 = input1;
     _output = output;
     _alpha  = alpha;
 
-    unsigned int       num_elems_processed_per_iteration_x = 0;
-    const unsigned int num_elems_processed_per_iteration_y = 4;
+    // Configure kernel window
+    auto win_config = validate_and_configure_window(input0->info(), input1->info(), output->info());
+    ARM_COMPUTE_ERROR_THROW_ON(win_config.first);
+    INEKernel::configure(win_config.second);
+}
 
-    // Check if the output tensor is a vector. If so,the kernel runs the vector-matrix multiplication
-    if((output->info()->dimension(1) == 1))
-    {
-        switch(input0->info()->data_type())
-        {
-            case DataType::F32:
-            {
-                num_elems_processed_per_iteration_x = 16;
-                break;
-            }
-            case DataType::QS8:
-            {
-                num_elems_processed_per_iteration_x = 32;
-                break;
-            }
-            case DataType::QS16:
-            {
-                num_elems_processed_per_iteration_x = 16;
-                break;
-            }
-#ifdef ARM_COMPUTE_ENABLE_FP16
-            case DataType::F16:
-            {
-                num_elems_processed_per_iteration_x = 32;
-                break;
-            }
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
-            default:
-            {
-                ARM_COMPUTE_ERROR("Data type not supported");
-                break;
-            }
-        }
+Status NEGEMMMatrixMultiplyKernel::validate(const ITensorInfo *input0, const ITensorInfo *input1, const ITensorInfo *output, float alpha, bool is_interleaved,
+                                            const GEMMReshapeInfo &reshape_info)
+{
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_arguments(input0, input1, output, alpha, is_interleaved, reshape_info));
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_and_configure_window(input0->clone().get(), input1->clone().get(), output->clone().get()).first);
 
-        // Configure kernel window
-        Window win = calculate_max_window(*output->info(), Steps(num_elems_processed_per_iteration_x));
-
-        AccessWindowHorizontal output_access(output->info(), 0, num_elems_processed_per_iteration_x);
-
-        update_window_and_padding(win,
-                                  AccessWindowStatic(input0->info(), 0, 0, input0->info()->tensor_shape().x(), 1),
-                                  AccessWindowHorizontal(input1->info(), 0, num_elems_processed_per_iteration_x),
-                                  output_access);
-
-        Coordinates coord;
-        coord.set_num_dimensions(output->info()->num_dimensions());
-        output_access.set_valid_region(win, ValidRegion(coord, output->info()->tensor_shape()));
-
-        INEKernel::configure(win);
-    }
-    else
-    {
-        switch(input0->info()->data_type())
-        {
-            case DataType::F32:
-            {
-                num_elems_processed_per_iteration_x = 8;
-                break;
-            }
-            case DataType::QS8:
-            {
-                num_elems_processed_per_iteration_x = 32;
-                break;
-            }
-            case DataType::QS16:
-            {
-                num_elems_processed_per_iteration_x = 8;
-                break;
-            }
-#ifdef ARM_COMPUTE_ENABLE_FP16
-            case DataType::F16:
-            {
-                num_elems_processed_per_iteration_x = 8;
-                break;
-            }
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
-            default:
-            {
-                ARM_COMPUTE_ERROR("Data type not supported");
-                break;
-            }
-        }
-
-        // Configure kernel window
-        Window win = calculate_max_window(*output->info(), Steps(num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y));
-
-        AccessWindowRectangle output_access(output->info(), 0, 0, num_elems_processed_per_iteration_x, num_elems_processed_per_iteration_y);
-
-        update_window_and_padding(win,
-                                  AccessWindowRectangle(input0->info(), 0, 0, 4, 1, 1.f, 0.25f),
-                                  AccessWindowStatic(input1->info(), 0, 0, input1->info()->tensor_shape().x(), ceil_to_multiple(input1->info()->tensor_shape().y(), 4)),
-                                  output_access);
-
-        output_access.set_valid_region(win, ValidRegion(Coordinates(0, 0), output->info()->tensor_shape()));
-
-        INEKernel::configure(win);
-    }
+    return Status{};
 }
 
 void NEGEMMMatrixMultiplyKernel::run(const Window &window, const ThreadInfo &info)
@@ -1563,14 +1650,14 @@ void NEGEMMMatrixMultiplyKernel::run(const Window &window, const ThreadInfo &inf
                 vector_matrix_multiply_qs16<false>(_input0, _input1, _output, window, info, _alpha);
                 break;
             }
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
             case DataType::F16:
             {
                 multiply_alpha ? vector_matrix_multiply_f16<true>(_input0, _input1, _output, window, info, _alpha) :
                 vector_matrix_multiply_f16<false>(_input0, _input1, _output, window, info, _alpha);
                 break;
             }
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
             default:
             {
                 ARM_COMPUTE_ERROR("Data type not supported");
@@ -1600,14 +1687,14 @@ void NEGEMMMatrixMultiplyKernel::run(const Window &window, const ThreadInfo &inf
                 matrix_matrix_multiply_qs16<false>(_input0, _input1, _output, window, _alpha);
                 break;
             }
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
             case DataType::F16:
             {
                 multiply_alpha ? matrix_matrix_multiply_f16<true>(_input0, _input1, _output, window, _alpha) :
                 matrix_matrix_multiply_f16<false>(_input0, _input1, _output, window, _alpha);
                 break;
             }
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
             default:
             {
                 ARM_COMPUTE_ERROR("Data type not supported");

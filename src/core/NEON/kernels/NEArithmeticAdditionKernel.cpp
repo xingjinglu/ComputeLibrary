@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -46,10 +46,12 @@ class Coordinates;
 
 namespace
 {
+constexpr unsigned int num_elems_processed_per_iteration = 16;
+
 void add_wrap_QS8_QS8_QS8(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -64,8 +66,8 @@ void add_wrap_QS8_QS8_QS8(const ITensor *in1, const ITensor *in2, ITensor *out, 
 
 void add_saturate_QS8_QS8_QS8(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -80,8 +82,8 @@ void add_saturate_QS8_QS8_QS8(const ITensor *in1, const ITensor *in2, ITensor *o
 
 void add_wrap_U8_U8_U8(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -93,8 +95,8 @@ void add_wrap_U8_U8_U8(const ITensor *in1, const ITensor *in2, ITensor *out, con
 
 void add_saturate_U8_U8_U8(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -145,7 +147,7 @@ inline int16x8x2_t vqadd2q_s16(const int16x8x2_t &a, const int16x8x2_t &b)
     return res;
 }
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 inline float16x8x2_t vadd2q_f16(const float16x8x2_t &a, const float16x8x2_t &b)
 {
     const float16x8x2_t res =
@@ -158,13 +160,13 @@ inline float16x8x2_t vadd2q_f16(const float16x8x2_t &a, const float16x8x2_t &b)
 
     return res;
 }
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 
 void add_F16_F16_F16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-#ifdef ARM_COMPUTE_ENABLE_FP16
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -175,19 +177,19 @@ void add_F16_F16_F16(const ITensor *in1, const ITensor *in2, ITensor *out, const
         vst2q_f16(reinterpret_cast<float16_t *>(output.ptr()), vadd2q_f16(a, b));
     },
     input1, input2, output);
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
     ARM_COMPUTE_UNUSED(in1);
     ARM_COMPUTE_UNUSED(in2);
     ARM_COMPUTE_UNUSED(out);
     ARM_COMPUTE_UNUSED(window);
     ARM_COMPUTE_ERROR("Not supported, recompile the library with arch=arm64-v8.2-a");
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 }
 
 void add_F32_F32_F32(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -202,8 +204,8 @@ void add_F32_F32_F32(const ITensor *in1, const ITensor *in2, ITensor *out, const
 
 void add_wrap_S16_S16_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -218,8 +220,8 @@ void add_wrap_S16_S16_S16(const ITensor *in1, const ITensor *in2, ITensor *out, 
 
 void add_saturate_S16_S16_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -234,8 +236,8 @@ void add_saturate_S16_S16_S16(const ITensor *in1, const ITensor *in2, ITensor *o
 
 void add_wrap_S16_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -257,8 +259,8 @@ void add_wrap_S16_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, c
 
 void add_saturate_S16_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -292,8 +294,8 @@ inline void add_saturate_U8_S16_S16(const ITensor *input1, const ITensor *input2
 
 void add_wrap_U8_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -325,8 +327,8 @@ void add_wrap_U8_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, co
 
 void add_saturate_U8_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out, const Window &window)
 {
-    Iterator input1(in1, window);
-    Iterator input2(in2, window);
+    Iterator input1(in1, window.broadcast_if_dimension_le_one(in1->info()->tensor_shape()));
+    Iterator input2(in2, window.broadcast_if_dimension_le_one(in2->info()->tensor_shape()));
     Iterator output(out, window);
 
     execute_window_loop(window, [&](const Coordinates & id)
@@ -355,6 +357,91 @@ void add_saturate_U8_U8_S16(const ITensor *in1, const ITensor *in2, ITensor *out
     },
     input1, input2, output);
 }
+
+Status validate_arguments(const ITensorInfo &input1, const ITensorInfo &input2, const ITensorInfo &output, ConvertPolicy policy)
+{
+    ARM_COMPUTE_UNUSED(policy);
+
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(&input1, 1, DataType::U8, DataType::QS8, DataType::QS16, DataType::S16, DataType::F16, DataType::F32);
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(&input2, 1, DataType::U8, DataType::QS8, DataType::QS16, DataType::S16, DataType::F16, DataType::F32);
+
+    const TensorShape out_shape = TensorShape::broadcast_shape(input1.tensor_shape(), input2.tensor_shape());
+
+    ARM_COMPUTE_RETURN_ERROR_ON_MSG(out_shape.total_size() == 0, "Inputs are not broadcast compatible");
+
+    if(is_data_type_fixed_point(input1.data_type()) || is_data_type_fixed_point(input2.data_type()))
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(&input1, &input2);
+    }
+
+    // Validate in case of configured output
+    if(output.total_size() > 0)
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON_MSG(
+            !(input1.data_type() == DataType::QS8 && input2.data_type() == DataType::QS8 && output.data_type() == DataType::QS8)
+            && !(input1.data_type() == DataType::U8 && input2.data_type() == DataType::U8 && output.data_type() == DataType::U8)
+            && !(input1.data_type() == DataType::U8 && input2.data_type() == DataType::U8 && output.data_type() == DataType::S16)
+            && !(input1.data_type() == DataType::U8 && input2.data_type() == DataType::S16 && output.data_type() == DataType::S16)
+            && !(input1.data_type() == DataType::S16 && input2.data_type() == DataType::U8 && output.data_type() == DataType::S16)
+            && !(input1.data_type() == DataType::QS16 && input2.data_type() == DataType::QS16 && output.data_type() == DataType::QS16)
+            && !(input1.data_type() == DataType::S16 && input2.data_type() == DataType::S16 && output.data_type() == DataType::S16)
+            && !(input1.data_type() == DataType::F32 && input2.data_type() == DataType::F32 && output.data_type() == DataType::F32)
+            && !(input1.data_type() == DataType::F16 && input2.data_type() == DataType::F16 && output.data_type() == DataType::F16),
+            "You called addition with the wrong image formats");
+
+        ARM_COMPUTE_RETURN_ERROR_ON_MSG(detail::have_different_dimensions(out_shape, output.tensor_shape(), 0),
+                                        "Wrong shape for output");
+
+        if(is_data_type_fixed_point(input1.data_type()) || is_data_type_fixed_point(output.data_type()))
+        {
+            ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(&input1, &output);
+        }
+    }
+
+    return Status{};
+}
+
+std::pair<Status, Window> validate_and_configure_window(ITensorInfo &input1, ITensorInfo &input2, ITensorInfo &output)
+{
+    const std::pair<TensorShape, ValidRegion> broadcast_pair = ITensorInfo::broadcast_shape_and_valid_region(input1, input2);
+    const TensorShape &out_shape    = broadcast_pair.first;
+    const ValidRegion &valid_region = broadcast_pair.second;
+
+    // Auto initialize output if not initialized
+    {
+        set_shape_if_empty(output, out_shape);
+
+        if(input1.data_type() == DataType::S16 || input2.data_type() == DataType::S16)
+        {
+            set_format_if_unknown(output, Format::S16);
+        }
+        else if(input1.data_type() == DataType::F16 && input2.data_type() == DataType::F16)
+        {
+            set_format_if_unknown(output, Format::F16);
+        }
+        else if(input1.data_type() == DataType::F32 || input2.data_type() == DataType::F32)
+        {
+            set_format_if_unknown(output, Format::F32);
+        }
+    }
+
+    Window win        = calculate_max_window(valid_region, Steps(num_elems_processed_per_iteration));
+    Window win_input1 = win.broadcast_if_dimension_le_one(input1);
+    Window win_input2 = win.broadcast_if_dimension_le_one(input2);
+
+    AccessWindowHorizontal input1_access(&input1, 0, num_elems_processed_per_iteration);
+    AccessWindowHorizontal input2_access(&input2, 0, num_elems_processed_per_iteration);
+    AccessWindowHorizontal output_access(&output, 0, num_elems_processed_per_iteration);
+
+    bool window_changed = update_window_and_padding(win_input1, input1_access)
+                          || update_window_and_padding(win_input2, input2_access)
+                          || update_window_and_padding(win, output_access);
+
+    output_access.set_valid_region(win, valid_region);
+
+    Status err = (window_changed) ? ARM_COMPUTE_CREATE_ERROR(ErrorCode::RUNTIME_ERROR, "Insufficient Padding!") : Status{};
+    return std::make_pair(err, win);
+}
 } // namespace
 
 NEArithmeticAdditionKernel::NEArithmeticAdditionKernel()
@@ -365,36 +452,11 @@ NEArithmeticAdditionKernel::NEArithmeticAdditionKernel()
 void NEArithmeticAdditionKernel::configure(const ITensor *input1, const ITensor *input2, ITensor *output, ConvertPolicy policy)
 {
     ARM_COMPUTE_ERROR_ON_NULLPTR(input1, input2, output);
+    ARM_COMPUTE_ERROR_THROW_ON(validate_arguments(*input1->info(), *input2->info(), *output->info(), policy));
 
-    // Auto initialize output if not initialized
-    {
-        set_shape_if_empty(*output->info(), input1->info()->tensor_shape());
-
-        if(input1->info()->data_type() == DataType::S16 || input2->info()->data_type() == DataType::S16)
-        {
-            set_format_if_unknown(*output->info(), Format::S16);
-        }
-        else if(input1->info()->data_type() == DataType::F16 || input2->info()->data_type() == DataType::F16)
-        {
-            set_format_if_unknown(*output->info(), Format::F16);
-        }
-        else if(input1->info()->data_type() == DataType::F32 || input2->info()->data_type() == DataType::F32)
-        {
-            set_format_if_unknown(*output->info(), Format::F32);
-        }
-    }
-
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_SHAPES(input1, input2, output);
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input1, 1, DataType::QS8, DataType::U8, DataType::QS16, DataType::S16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input2, 1, DataType::QS8, DataType::U8, DataType::QS16, DataType::S16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(output, 1, DataType::QS8, DataType::U8, DataType::QS16, DataType::S16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_MSG(output->info()->data_type() == DataType::U8 && (input1->info()->data_type() != DataType::U8 || input2->info()->data_type() != DataType::U8),
-                             "Output can only be U8 if both inputs are U8");
-    if(is_data_type_fixed_point(input1->info()->data_type()) || is_data_type_fixed_point(input2->info()->data_type()) || is_data_type_fixed_point(output->info()->data_type()))
-    {
-        // Check that all data types are the same and all fixed-point positions are the same
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input1, input2, output);
-    }
+    // Configure kernel window
+    auto win_config = validate_and_configure_window(*input1->info(), *input2->info(), *output->info());
+    ARM_COMPUTE_ERROR_THROW_ON(win_config.first);
 
     static std::map<std::string, AddFunction *> map_function =
     {
@@ -416,7 +478,6 @@ void NEArithmeticAdditionKernel::configure(const ITensor *input1, const ITensor 
         { "add_saturate_F32_F32_F32", &add_F32_F32_F32 },
         { "add_wrap_F16_F16_F16", &add_F16_F16_F16 },
         { "add_saturate_F16_F16_F16", &add_F16_F16_F16 },
-
     };
 
     _input1 = input1;
@@ -435,28 +496,18 @@ void NEArithmeticAdditionKernel::configure(const ITensor *input1, const ITensor 
     {
         _func = it->second;
     }
-    else
-    {
-        ARM_COMPUTE_ERROR("You called arithmetic addition with the wrong tensor data type");
-    }
 
-    constexpr unsigned int num_elems_processed_per_iteration = 16;
+    INEKernel::configure(win_config.second);
+}
 
-    // Configure kernel window
-    Window                 win = calculate_max_window(*input1->info(), Steps(num_elems_processed_per_iteration));
-    AccessWindowHorizontal output_access(output->info(), 0, num_elems_processed_per_iteration);
+Status NEArithmeticAdditionKernel::validate(const ITensorInfo *input1, const ITensorInfo *input2, const ITensorInfo *output, ConvertPolicy policy)
+{
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input1, input2, output);
 
-    update_window_and_padding(win,
-                              AccessWindowHorizontal(input1->info(), 0, num_elems_processed_per_iteration),
-                              AccessWindowHorizontal(input2->info(), 0, num_elems_processed_per_iteration),
-                              output_access);
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_arguments(*input1, *input2, *output, policy));
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_and_configure_window(*input1->clone(), *input2->clone(), *output->clone()).first);
 
-    ValidRegion valid_region = intersect_valid_regions(input1->info()->valid_region(),
-                                                       input2->info()->valid_region());
-
-    output_access.set_valid_region(win, valid_region);
-
-    INEKernel::configure(win);
+    return Status{};
 }
 
 void NEArithmeticAdditionKernel::run(const Window &window, const ThreadInfo &info)
@@ -467,4 +518,11 @@ void NEArithmeticAdditionKernel::run(const Window &window, const ThreadInfo &inf
     ARM_COMPUTE_ERROR_ON(_func == nullptr);
 
     (*_func)(_input1, _input2, _output, window);
+}
+
+BorderSize NEArithmeticAdditionKernel::border_size() const
+{
+    const unsigned int replicateSize = _output->info()->dimension(0) - std::min(_input1->info()->dimension(0), _input2->info()->dimension(0));
+    const unsigned int border        = std::min<unsigned int>(num_elems_processed_per_iteration - 1U, replicateSize);
+    return BorderSize(0, border, 0, 0);
 }

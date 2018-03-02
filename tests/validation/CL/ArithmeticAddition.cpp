@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -60,6 +60,41 @@ const auto ArithmeticAdditionFP32Dataset = combine(combine(framework::dataset::m
 
 TEST_SUITE(CL)
 TEST_SUITE(ArithmeticAddition)
+
+// *INDENT-OFF*
+// clang-format off
+DATA_TEST_CASE(Validate, framework::DatasetMode::ALL, zip(zip(zip(
+               framework::dataset::make("Input1Info", { TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                        TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                        TensorInfo(TensorShape(27U, 13U, 2U), 1, DataType::U8),      // Window shrink
+                                                        TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),      // Invalid data type combination
+                                                        TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::F32),     // Mismatching shapes
+                                                        TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 2),  // Mismatching fixed point
+                                                        TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 2),
+                                                      }),
+               framework::dataset::make("Input2Info",{ TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(27U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::S16),
+                                                       TensorInfo(TensorShape(48U, 11U, 2U), 1, DataType::F32),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 3),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 2),
+                                                     })),
+               framework::dataset::make("OutputInfo",{ TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::S16),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(27U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::U8),
+                                                       TensorInfo(TensorShape(48U, 11U, 2U), 1, DataType::F32),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 3),
+                                                       TensorInfo(TensorShape(32U, 13U, 2U), 1, DataType::QS8, 2),
+                                                     })),
+               framework::dataset::make("Expected", { true, true, false, false, false, false, true })),
+               input1_info, input2_info, output_info, expected)
+{
+    ARM_COMPUTE_EXPECT(bool(CLArithmeticAddition::validate(&input1_info.clone()->set_is_resizable(false), &input2_info.clone()->set_is_resizable(false), &output_info.clone()->set_is_resizable(false), ConvertPolicy::WRAP)) == expected, framework::LogLevel::ERRORS);
+}
+// clang-format on
+// *INDENT-ON*
 
 template <typename T>
 using CLArithmeticAdditionFixture = ArithmeticAdditionValidationFixture<CLTensor, CLAccessor, CLArithmeticAddition, T>;
@@ -141,7 +176,7 @@ using CLArithmeticAdditionFixedPointFixture = ArithmeticAdditionValidationFixedP
 
 TEST_SUITE(Quantized)
 TEST_SUITE(QS8)
-FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int8_t>, framework::DatasetMode::PRECOMMIT, combine(combine(combine(datasets::SmallShapes(), ArithmeticAdditionQS8Dataset),
+FIXTURE_DATA_TEST_CASE(RunTiny, CLArithmeticAdditionFixedPointFixture<int8_t>, framework::DatasetMode::PRECOMMIT, combine(combine(combine(datasets::TinyShapes(), ArithmeticAdditionQS8Dataset),
                        framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })),
                        framework::dataset::make("FractionalBits", 1, 7)))
 {
@@ -149,7 +184,7 @@ FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int8_t>, 
     validate(CLAccessor(_target), _reference);
 }
 
-FIXTURE_DATA_TEST_CASE(RunLarge, CLArithmeticAdditionFixedPointFixture<int8_t>, framework::DatasetMode::NIGHTLY, combine(combine(combine(datasets::LargeShapes(), ArithmeticAdditionQS8Dataset),
+FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int8_t>, framework::DatasetMode::NIGHTLY, combine(combine(combine(datasets::SmallShapes(), ArithmeticAdditionQS8Dataset),
                        framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })),
                        framework::dataset::make("FractionalBits", 1, 7)))
 {
@@ -159,7 +194,7 @@ FIXTURE_DATA_TEST_CASE(RunLarge, CLArithmeticAdditionFixedPointFixture<int8_t>, 
 TEST_SUITE_END()
 
 TEST_SUITE(QS16)
-FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int16_t>, framework::DatasetMode::PRECOMMIT, combine(combine(combine(datasets::SmallShapes(), ArithmeticAdditionQS16Dataset),
+FIXTURE_DATA_TEST_CASE(RunTiny, CLArithmeticAdditionFixedPointFixture<int16_t>, framework::DatasetMode::PRECOMMIT, combine(combine(combine(datasets::TinyShapes(), ArithmeticAdditionQS16Dataset),
                        framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })),
                        framework::dataset::make("FractionalBits", 1, 15)))
 {
@@ -167,7 +202,7 @@ FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int16_t>,
     validate(CLAccessor(_target), _reference);
 }
 
-FIXTURE_DATA_TEST_CASE(RunLarge, CLArithmeticAdditionFixedPointFixture<int16_t>, framework::DatasetMode::NIGHTLY, combine(combine(combine(datasets::LargeShapes(), ArithmeticAdditionQS16Dataset),
+FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixedPointFixture<int16_t>, framework::DatasetMode::NIGHTLY, combine(combine(combine(datasets::SmallShapes(), ArithmeticAdditionQS16Dataset),
                        framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })),
                        framework::dataset::make("FractionalBits", 1, 15)))
 {
@@ -220,6 +255,25 @@ FIXTURE_DATA_TEST_CASE(RunSmall, CLArithmeticAdditionFixture<float>, framework::
 
 FIXTURE_DATA_TEST_CASE(RunLarge, CLArithmeticAdditionFixture<float>, framework::DatasetMode::NIGHTLY, combine(combine(datasets::LargeShapes(), ArithmeticAdditionFP32Dataset),
                                                                                                               framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })))
+{
+    // Validate output
+    validate(CLAccessor(_target), _reference);
+}
+
+template <typename T>
+using CLArithmeticAdditionBroadcastFixture = ArithmeticAdditionBroadcastValidationFixture<CLTensor, CLAccessor, CLArithmeticAddition, T>;
+
+FIXTURE_DATA_TEST_CASE(RunSmallBroadcast, CLArithmeticAdditionBroadcastFixture<float>, framework::DatasetMode::PRECOMMIT, combine(combine(datasets::SmallShapesBroadcast(),
+                       ArithmeticAdditionFP32Dataset),
+                       framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })))
+{
+    // Validate output
+    validate(CLAccessor(_target), _reference);
+}
+
+FIXTURE_DATA_TEST_CASE(RunLargeBroadcast, CLArithmeticAdditionBroadcastFixture<float>, framework::DatasetMode::NIGHTLY, combine(combine(datasets::LargeShapesBroadcast(),
+                       ArithmeticAdditionFP32Dataset),
+                       framework::dataset::make("ConvertPolicy", { ConvertPolicy::SATURATE, ConvertPolicy::WRAP })))
 {
     // Validate output
     validate(CLAccessor(_target), _reference);

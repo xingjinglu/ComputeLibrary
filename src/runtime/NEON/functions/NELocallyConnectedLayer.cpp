@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -46,6 +46,7 @@ void NELocallyConnectedLayer::configure(const ITensor *input, const ITensor *wei
     ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(output, 1, DataType::F32);
     ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, weights, output);
     ARM_COMPUTE_ERROR_ON(weights->info()->dimension(2) != input->info()->dimension(2));
+    ARM_COMPUTE_ERROR_ON(!conv_info.padding_is_symmetric());
 
     if(biases != nullptr)
     {
@@ -111,7 +112,7 @@ void NELocallyConnectedLayer::configure(const ITensor *input, const ITensor *wei
     _input_im2col_kernel.configure(input, &_input_im2col_reshaped, Size2D(kernel_width, kernel_height), conv_info, _has_bias);
     _weights_reshape_kernel.configure(weights, biases, &_weights_reshaped);
     _mm_kernel.configure(&_input_im2col_reshaped, &_weights_reshaped, &_gemm_output);
-    _output_col2im_kernel.configure(&_gemm_output, output, std::make_pair(conv_w, conv_h));
+    _output_col2im_kernel.configure(&_gemm_output, output, Size2D(conv_w, conv_h));
 
     // Allocate intermediate tensors
     _weights_reshaped.allocator()->allocate();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -34,6 +34,10 @@ class ITensor;
 class NEBox3x3Kernel : public INESimpleKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEBox3x3Kernel";
+    }
     /** Set the source, destination and border mode of the kernel
      *
      * @param[in]  input            Source tensor. Data type supported: U8.
@@ -46,17 +50,21 @@ public:
     BorderSize border_size() const override;
 };
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 /** NEON kernel to perform a Box 3x3 filter using F16 simd
  */
 class NEBox3x3FP16Kernel : public NEBox3x3Kernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEBox3x3FP16Kernel";
+    }
     // Inherited methods overridden:
     void run(const Window &window, const ThreadInfo &info) override;
 };
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 using NEBox3x3FP16Kernel = NEBox3x3Kernel;
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 } // namespace arm_compute
 #endif /*__ARM_COMPUTE_NEBOX3x3KERNEL_H__ */

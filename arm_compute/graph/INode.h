@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -25,6 +25,7 @@
 #define __ARM_COMPUTE_GRAPH_INODE_H__
 
 #include "arm_compute/graph/GraphContext.h"
+#include "arm_compute/graph/ITensorObject.h"
 #include "arm_compute/graph/Types.h"
 #include "arm_compute/runtime/IFunction.h"
 
@@ -46,7 +47,7 @@ public:
      * @param[in] input  Input tensor of the node
      * @param[in] output Output tensor of the node
      */
-    virtual std::unique_ptr<arm_compute::IFunction> instantiate_node(GraphContext &ctx, ITensor *input, ITensor *output) = 0;
+    virtual std::unique_ptr<arm_compute::IFunction> instantiate_node(GraphContext &ctx, ITensorObject *input, ITensorObject *output) = 0;
     /** Override the existing target hint
      *
      * @note If the input is DONT_CARE then the method has to pick a technology,
@@ -57,6 +58,16 @@ public:
      * @return The updated target hint
      */
     TargetHint override_target_hint(TargetHint target_hint) const;
+    /** Method to check if the node supports in-place operations.
+     *
+     * @return True if the node supports in-place operations, false otherwise.
+     */
+    virtual bool supports_in_place() const;
+    /** Set the value of the _supports_in_place attribute.
+     *
+     * @param[in] value Boolean value to assign to _supports_in_place.
+     */
+    void set_supports_in_place(bool value);
 
 protected:
     /** Interface to be implement that override the hints
@@ -69,6 +80,7 @@ protected:
 
 protected:
     TargetHint _target_hint{ TargetHint::DONT_CARE };
+    bool       _supports_in_place{ false };
 };
 } // namespace graph
 } // namespace arm_compute

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -36,6 +36,10 @@ class ITensor;
 class NEGradientKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEGradientKernel";
+    }
     /** Default constructor */
     NEGradientKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -81,18 +85,22 @@ protected:
     ITensor          *_phase;     /**< Destination tensor - Quantized phase */
 };
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 /** NEON kernel to perform Gradient computation
  */
 class NEGradientFP16Kernel : public NEGradientKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEGradientFP16Kernel";
+    }
     // Inherited methods overriden:
     void configure(const ITensor *gx, const ITensor *gy, ITensor *magnitude, ITensor *phase, int32_t norm_type) override;
 };
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 using NEGradientFP16Kernel = NEGradientKernel;
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 
 /** NEON kernel to perform Non-Maxima suppression for Canny Edge.
  *
@@ -104,6 +112,10 @@ using NEGradientFP16Kernel = NEGradientKernel;
 class NEEdgeNonMaxSuppressionKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEEdgeNonMaxSuppressionKernel";
+    }
     /** Default constructor */
     NEEdgeNonMaxSuppressionKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */
@@ -157,6 +169,10 @@ private:
 class NEEdgeTraceKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEEdgeTraceKernel";
+    }
     /** Default constructor */
     NEEdgeTraceKernel();
     /** Prevent instances of this class from being copied (As this class contains pointers) */

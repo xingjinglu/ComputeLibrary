@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -46,9 +46,10 @@ public:
         shape.set(shape.num_dimensions(), batches);
 
         // Create tensors
-        const int fixed_point_position = 4;
-        src                            = create_tensor<TensorType>(shape, data_type, 1, fixed_point_position);
-        dst                            = create_tensor<TensorType>(shape, data_type, 1, fixed_point_position);
+        const int              fixed_point_position = 4;
+        const QuantizationInfo q_info(0.5f, -10);
+        src = create_tensor<TensorType>(shape, data_type, 1, fixed_point_position, q_info);
+        dst = create_tensor<TensorType>(shape, data_type, 1, fixed_point_position, q_info);
 
         // Create and configure function
         act_layer.configure(&src, &dst, info);
@@ -56,14 +57,17 @@ public:
         // Allocate tensors
         src.allocator()->allocate();
         dst.allocator()->allocate();
-
-        // Fill tensors
-        library->fill_tensor_uniform(Accessor(src), 0);
     }
 
     void run()
     {
         act_layer.run();
+    }
+
+    void sync()
+    {
+        sync_if_necessary<TensorType>();
+        sync_tensor_if_necessary<TensorType>(dst);
     }
 
     void teardown()

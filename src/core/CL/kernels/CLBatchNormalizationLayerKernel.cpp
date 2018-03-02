@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -37,15 +37,78 @@
 
 using namespace arm_compute;
 
+namespace
+{
+Status validate_arguments(const ITensorInfo *input, const ITensorInfo *output,
+                          const ITensorInfo *mean, const ITensorInfo *var,
+                          const ITensorInfo *beta, const ITensorInfo *gamma,
+                          float epsilon, ActivationLayerInfo act_info)
+{
+    ARM_COMPUTE_UNUSED(epsilon);
+    ARM_COMPUTE_RETURN_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QS16, DataType::F16, DataType::F32);
+    ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_SHAPES(mean, var, beta, gamma);
+    ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input, mean, var, beta, gamma);
+    ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input, mean, var, beta, gamma);
+    ARM_COMPUTE_RETURN_ERROR_ON(input->dimension(2) != mean->dimension(0));
+    if(act_info.enabled())
+    {
+        ActivationLayerInfo::ActivationFunction act = act_info.activation();
+        ARM_COMPUTE_RETURN_ERROR_ON(input->data_type() != DataType::F32 && input->data_type() != DataType::F16);
+        ARM_COMPUTE_RETURN_ERROR_ON(act != ActivationLayerInfo::ActivationLayerInfo::ActivationFunction::RELU && act != ActivationLayerInfo::ActivationLayerInfo::ActivationFunction::BOUNDED_RELU
+                                    && act != ActivationLayerInfo::ActivationLayerInfo::ActivationFunction::LU_BOUNDED_RELU);
+        ARM_COMPUTE_RETURN_ERROR_ON(act_info.b() > act_info.a());
+    }
+
+    if(output != nullptr && output->total_size() != 0)
+    {
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_SHAPES(input, output);
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_DATA_TYPES(input, output);
+        ARM_COMPUTE_RETURN_ERROR_ON_MISMATCHING_FIXED_POINT(input, output);
+    }
+
+    return Status{};
+}
+
+std::pair<Status, Window> validate_and_configure_window(ITensorInfo *input, ITensorInfo *output)
+{
+    if(output != nullptr)
+    {
+        // Output tensor auto initialization if not yet initialized
+        auto_init_if_empty(*output, *input->clone());
+    }
+
+    const unsigned int num_elems_processed_per_iteration = 16 / input->element_size();
+
+    // Configure kernel window
+    Window                 win = calculate_max_window(*input, Steps(num_elems_processed_per_iteration));
+    AccessWindowHorizontal input_access(input, 0, num_elems_processed_per_iteration);
+
+    bool window_changed = false;
+    if(output != nullptr)
+    {
+        AccessWindowHorizontal output_access(output, 0, num_elems_processed_per_iteration);
+        window_changed = update_window_and_padding(win, input_access, output_access);
+        output_access.set_valid_region(win, input->valid_region());
+    }
+    else
+    {
+        window_changed = update_window_and_padding(win, input_access);
+    }
+
+    Status err = (window_changed) ? ARM_COMPUTE_CREATE_ERROR(ErrorCode::RUNTIME_ERROR, "Insufficient Padding!") : Status{};
+    return std::make_pair(err, win);
+}
+} // namespace
+
 CLBatchNormalizationLayerKernel::CLBatchNormalizationLayerKernel()
-    : _input(nullptr), _output(nullptr), _mean(nullptr), _var(nullptr), _beta(nullptr), _gamma(nullptr), _epsilon(0)
+    : _input(nullptr), _output(nullptr), _mean(nullptr), _var(nullptr), _beta(nullptr), _gamma(nullptr), _epsilon(0), _run_in_place(false)
 {
 }
 
 void CLBatchNormalizationLayerKernel::configure(ICLTensor *input, ICLTensor *output, const ICLTensor *mean, const ICLTensor *var, const ICLTensor *beta, const ICLTensor *gamma,
-                                                float epsilon)
+                                                float epsilon, ActivationLayerInfo act_info)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QS16, DataType::F16, DataType::F32);
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input, mean, var, beta, gamma);
 
     _input   = input;
     _output  = output;
@@ -55,57 +118,63 @@ void CLBatchNormalizationLayerKernel::configure(ICLTensor *input, ICLTensor *out
     _gamma   = gamma;
     _epsilon = epsilon;
 
+    _run_in_place = (output == nullptr) || (output == input);
+
     if(output != nullptr)
     {
+        ARM_COMPUTE_ERROR_ON_NULLPTR(input->info(), output->info());
         // Output tensor auto initialization if not yet initialized
-        auto_init_if_empty(*output->info(), input->info()->tensor_shape(), 1, input->info()->data_type(), input->info()->fixed_point_position());
-
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_SHAPES(input, output);
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, output, mean, var, beta, gamma);
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, output, mean, var, beta, gamma);
-    }
-    else
-    {
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, mean, var, beta, gamma);
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, mean, var, beta, gamma);
+        auto_init_if_empty(*output->info(), *input->info()->clone());
     }
 
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_SHAPES(mean, var, beta, gamma);
-    ARM_COMPUTE_ERROR_ON(input->info()->dimension(2) != mean->info()->dimension(0));
+    ARM_COMPUTE_ERROR_THROW_ON(validate_arguments(input->info(), (output != nullptr) ? output->info() : nullptr,
+                                                  mean->info(), var->info(), beta->info(), gamma->info(), epsilon, act_info));
 
     const unsigned int num_elems_processed_per_iteration = 16 / input->info()->element_size();
 
     // Set build options
-    std::set<std::string> build_opts;
-    build_opts.emplace(("-DDATA_TYPE=" + get_cl_type_from_data_type(input->info()->data_type())));
-    build_opts.emplace(("-DVEC_SIZE=" + support::cpp11::to_string(num_elems_processed_per_iteration)));
-    build_opts.emplace(output == nullptr ? "-DIN_PLACE" : "");
-    if(is_data_type_fixed_point(input->info()->data_type()))
-    {
-        build_opts.emplace("-DFIXED_POINT_POSITION=" + support::cpp11::to_string(input->info()->fixed_point_position()));
-    }
+    CLBuildOptions build_opts;
+    build_opts.add_option("-DDATA_TYPE=" + get_cl_type_from_data_type(input->info()->data_type()));
+    build_opts.add_option("-DVEC_SIZE=" + support::cpp11::to_string(num_elems_processed_per_iteration));
+    build_opts.add_option_if(act_info.enabled(), "-D" + string_from_activation_func(act_info.activation()));
+    build_opts.add_option_if(act_info.enabled(), "-DA_VAL=" + float_to_string_with_full_precision(act_info.a()));
+    build_opts.add_option_if(act_info.enabled(), "-DB_VAL=" + float_to_string_with_full_precision(act_info.b()));
+    build_opts.add_option_if(_run_in_place, "-DIN_PLACE");
+    build_opts.add_option_if(is_data_type_fixed_point(input->info()->data_type()), "-DFIXED_POINT_POSITION=" + support::cpp11::to_string(input->info()->fixed_point_position()));
 
     // Create kernel
-    _kernel = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("batchnormalization_layer", build_opts));
+    _kernel = static_cast<cl::Kernel>(CLKernelLibrary::get().create_kernel("batchnormalization_layer", build_opts.options()));
 
     // Set kernel static arguments
-    unsigned int idx = 2 * num_arguments_per_3D_tensor() + 4 * num_arguments_per_1D_tensor(); // Skip the input and output parameters
+    unsigned int include_output = (!_run_in_place) ? 1 : 0;
+    unsigned int idx            = (1 + include_output) * num_arguments_per_3D_tensor() + 4 * num_arguments_per_1D_tensor(); // Skip the input and output parameters
     _kernel.setArg<cl_float>(idx++, _epsilon);
 
     // Configure kernel window
-    Window                 win = calculate_max_window(*input->info(), Steps(num_elems_processed_per_iteration));
-    AccessWindowHorizontal input_access(input->info(), 0, num_elems_processed_per_iteration);
-    if(output != nullptr)
-    {
-        AccessWindowHorizontal output_access(output->info(), 0, num_elems_processed_per_iteration);
-        update_window_and_padding(win, input_access, output_access);
-        output_access.set_valid_region(win, input->info()->valid_region());
-    }
-    else
-    {
-        update_window_and_padding(win, input_access);
-    }
-    ICLKernel::configure(win);
+    auto win_config = validate_and_configure_window(input->info(), (_run_in_place) ? nullptr : output->info());
+    ARM_COMPUTE_ERROR_THROW_ON(win_config.first);
+    ICLKernel::configure(win_config.second);
+
+    _config_id = "batch_normalization_layer_";
+    _config_id += string_from_data_type(input->info()->data_type());
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(input->info()->dimension(0));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(input->info()->dimension(1));
+    _config_id += "_";
+    _config_id += support::cpp11::to_string(input->info()->dimension(2));
+}
+
+Status CLBatchNormalizationLayerKernel::validate(const ITensorInfo *input, const ITensorInfo *output,
+                                                 const ITensorInfo *mean, const ITensorInfo *var,
+                                                 const ITensorInfo *beta, const ITensorInfo *gamma,
+                                                 float epsilon, ActivationLayerInfo act_info)
+{
+    const bool run_in_place = (output == nullptr) || (output == input);
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_arguments(input, output, mean, var, beta, gamma, epsilon, act_info));
+    ARM_COMPUTE_RETURN_ON_ERROR(validate_and_configure_window(input->clone().get(), (run_in_place) ? nullptr : output->clone().get()).first);
+
+    return Status{};
 }
 
 void CLBatchNormalizationLayerKernel::run(const Window &window, cl::CommandQueue &queue)
@@ -118,7 +187,8 @@ void CLBatchNormalizationLayerKernel::run(const Window &window, cl::CommandQueue
     Window vector_slice = window.first_slice_window_1D();
     vector_slice.set(Window::DimX, Window::Dimension(0, 0, 0));
 
-    unsigned int idx = 2 * num_arguments_per_3D_tensor();
+    unsigned int include_output = (!_run_in_place) ? 1 : 0;
+    unsigned int idx            = (1 + include_output) * num_arguments_per_3D_tensor();
     add_1D_tensor_argument(idx, _mean, vector_slice);
     add_1D_tensor_argument(idx, _var, vector_slice);
     add_1D_tensor_argument(idx, _beta, vector_slice);
@@ -128,11 +198,11 @@ void CLBatchNormalizationLayerKernel::run(const Window &window, cl::CommandQueue
     {
         idx = 0;
         add_3D_tensor_argument(idx, _input, slice);
-        if(_output != nullptr)
+        if(!_run_in_place)
         {
             add_3D_tensor_argument(idx, _output, slice);
         }
-        enqueue(queue, *this, slice);
+        enqueue(queue, *this, slice, _lws_hint);
     }
     while(window.slide_window_slice_3D(slice));
 }

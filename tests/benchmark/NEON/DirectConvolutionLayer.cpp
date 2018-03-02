@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -45,10 +45,11 @@ namespace test
 {
 namespace
 {
+// Special data types for networks that need 5x5 direct convolution, which does not support Fixed Point
 #ifdef ARM_COMPUTE_ENABLE_F16
-const auto data_types = framework::dataset::make("DataType", { DataType::QS8, DataType::F16, DataType::F32 });
+const auto data_types = framework::dataset::make("DataType", { DataType::F16, DataType::F32 });
 #else  /* ARM_COMPUTE_ENABLE_F16 */
-const auto data_types = framework::dataset::make("DataType", { DataType::QS8, DataType::F32 });
+const auto data_types = framework::dataset::make("DataType", { DataType::F32 });
 #endif /* ARM_COMPUTE_ENABLE_F16 */
 } // namespace
 
@@ -91,7 +92,7 @@ REGISTER_FIXTURE_DATA_TEST_CASE(SqueezeNetDirectConvolutionLayer, NEConvolutionL
 
 REGISTER_FIXTURE_DATA_TEST_CASE(VGG16DirectConvolutionLayer, NEConvolutionLayerFixture, framework::DatasetMode::NIGHTLY,
                                 framework::dataset::combine(framework::dataset::combine(datasets::VGG16ConvolutionLayerDataset(), data_types),
-                                                            framework::dataset::make("Batches", { 1, 4, 8 })));
+                                                            framework::dataset::make("Batches", { 1, 2 })));
 
 REGISTER_FIXTURE_DATA_TEST_CASE(YOLOV2DirectConvolutionLayer, NEConvolutionLayerFixture, framework::DatasetMode::NIGHTLY,
                                 framework::dataset::combine(framework::dataset::combine(datasets::YOLOV2ConvolutionLayerDataset(), data_types),

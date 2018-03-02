@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -25,9 +25,11 @@
 #define __ARM_COMPUTE_GRAPH_UTILS_H__
 
 #include "arm_compute/core/PixelValue.h"
+#include "arm_compute/graph/Graph.h"
 #include "arm_compute/graph/ITensorAccessor.h"
 #include "arm_compute/graph/Types.h"
 
+#include <array>
 #include <random>
 #include <string>
 #include <vector>
@@ -36,6 +38,38 @@ namespace arm_compute
 {
 namespace graph_utils
 {
+/** Preprocessor interface **/
+class IPreprocessor
+{
+public:
+    virtual ~IPreprocessor()                 = default;
+    virtual void preprocess(ITensor &tensor) = 0;
+};
+
+/** Caffe preproccessor */
+class CaffePreproccessor : public IPreprocessor
+{
+public:
+    /** Default Constructor
+     *
+     * @param mean Mean array in RGB ordering
+     * @param bgr  Boolean specifying if the preprocessing should assume BGR format
+     */
+    CaffePreproccessor(std::array<float, 3> mean = std::array<float, 3> { { 0, 0, 0 } }, bool bgr = true);
+    void preprocess(ITensor &tensor) override;
+
+private:
+    std::array<float, 3> _mean;
+    bool _bgr;
+};
+
+/** TF preproccessor */
+class TFPreproccessor : public IPreprocessor
+{
+public:
+    void preprocess(ITensor &tensor) override;
+};
+
 /** PPM writer class */
 class PPMWriter : public graph::ITensorAccessor
 {
@@ -84,13 +118,11 @@ class PPMAccessor final : public graph::ITensorAccessor
 public:
     /** Constructor
      *
-     * @param[in] ppm_path Path to PPM file
-     * @param[in] bgr      (Optional) Fill the first plane with blue channel (default = false)
-     * @param[in] mean_r   (Optional) Red mean value to be subtracted from red channel
-     * @param[in] mean_g   (Optional) Green mean value to be subtracted from green channel
-     * @param[in] mean_b   (Optional) Blue mean value to be subtracted from blue channel
+     * @param[in] ppm_path     Path to PPM file
+     * @param[in] bgr          (Optional) Fill the first plane with blue channel (default = false)
+     * @param[in] preprocessor (Optional) PPM pre-processing object
      */
-    PPMAccessor(const std::string &ppm_path, bool bgr = true, float mean_r = 0.0f, float mean_g = 0.0f, float mean_b = 0.0f);
+    PPMAccessor(std::string ppm_path, bool bgr = true, std::unique_ptr<IPreprocessor> preprocessor = nullptr);
     /** Allow instances of this class to be move constructed */
     PPMAccessor(PPMAccessor &&) = default;
 
@@ -98,11 +130,9 @@ public:
     bool access_tensor(ITensor &tensor) override;
 
 private:
-    const std::string &_ppm_path;
-    const bool         _bgr;
-    const float        _mean_r;
-    const float        _mean_g;
-    const float        _mean_b;
+    const std::string              _ppm_path;
+    const bool                     _bgr;
+    std::unique_ptr<IPreprocessor> _preprocessor;
 };
 
 /** Result accessor class */
@@ -127,6 +157,9 @@ public:
     bool access_tensor(ITensor &tensor) override;
 
 private:
+    template <typename T>
+    void access_predictions_tensor(ITensor &tensor);
+
     std::vector<std::string> _labels;
     std::ostream            &_output_stream;
     size_t                   _top_n;
@@ -175,6 +208,106 @@ public:
 private:
     const std::string _filename;
 };
+
+/** Generates appropriate random accessor
+ *
+ * @param[in] lower Lower random values bound
+ * @param[in] upper Upper random values bound
+ * @param[in] seed  Random generator seed
+ *
+ * @return A ramdom accessor
+ */
+inline std::unique_ptr<graph::ITensorAccessor> get_random_accessor(PixelValue lower, PixelValue upper, const std::random_device::result_type seed = 0)
+{
+    return arm_compute::support::cpp14::make_unique<RandomAccessor>(lower, upper, seed);
+}
+
+/** Generates appropriate weights accessor according to the specified path
+ *
+ * @note If path is empty will generate a DummyAccessor else will generate a NumPyBinLoader
+ *
+ * @param[in] path      Path to the data files
+ * @param[in] data_file Relative path to the data files from path
+ *
+ * @return An appropriate tensor accessor
+ */
+inline std::unique_ptr<graph::ITensorAccessor> get_weights_accessor(const std::string &path, const std::string &data_file)
+{
+    if(path.empty())
+    {
+        return arm_compute::support::cpp14::make_unique<DummyAccessor>();
+    }
+    else
+    {
+        return arm_compute::support::cpp14::make_unique<NumPyBinLoader>(path + data_file);
+    }
+}
+
+/** Generates appropriate input accessor according to the specified ppm_path
+ *
+ * @note If ppm_path is empty will generate a DummyAccessor else will generate a PPMAccessor
+ *
+ * @param[in] ppm_path     Path to PPM file
+ * @param[in] preprocessor Preproccessor object
+ * @param[in] bgr          (Optional) Fill the first plane with blue channel (default = true)
+ *
+ * @return An appropriate tensor accessor
+ */
+inline std::unique_ptr<graph::ITensorAccessor> get_input_accessor(const std::string             &ppm_path,
+                                                                  std::unique_ptr<IPreprocessor> preprocessor = nullptr,
+                                                                  bool                           bgr          = true)
+{
+    if(ppm_path.empty())
+    {
+        return arm_compute::support::cpp14::make_unique<DummyAccessor>();
+    }
+    else
+    {
+        return arm_compute::support::cpp14::make_unique<PPMAccessor>(ppm_path, bgr, std::move(preprocessor));
+    }
+}
+
+/** Utility function to return the TargetHint
+ *
+ * @param[in] target Integer value which expresses the selected target. Must be 0 for NEON, 1 for OpenCL or 2 for OpenCL with Tuner
+ *
+ * @return the TargetHint
+ */
+inline graph::TargetHint set_target_hint(int target)
+{
+    ARM_COMPUTE_ERROR_ON_MSG(target > 2, "Invalid target. Target must be 0 (NEON), 1 (OpenCL) or 2 (OpenCL with Tuner)");
+    if((target == 1 || target == 2) && graph::Graph::opencl_is_available())
+    {
+        // If type of target is OpenCL, check if OpenCL is available and initialize the scheduler
+        return graph::TargetHint::OPENCL;
+    }
+    else
+    {
+        return graph::TargetHint::NEON;
+    }
+}
+
+/** Generates appropriate output accessor according to the specified labels_path
+ *
+ * @note If labels_path is empty will generate a DummyAccessor else will generate a TopNPredictionsAccessor
+ *
+ * @param[in]  labels_path   Path to labels text file
+ * @param[in]  top_n         (Optional) Number of output classes to print
+ * @param[out] output_stream (Optional) Output stream
+ *
+ * @return An appropriate tensor accessor
+ */
+inline std::unique_ptr<graph::ITensorAccessor> get_output_accessor(const std::string &labels_path, size_t top_n = 5, std::ostream &output_stream = std::cout)
+{
+    if(labels_path.empty())
+    {
+        return arm_compute::support::cpp14::make_unique<DummyAccessor>(0);
+    }
+    else
+    {
+        return arm_compute::support::cpp14::make_unique<TopNPredictionsAccessor>(labels_path, top_n, output_stream);
+    }
+}
 } // namespace graph_utils
 } // namespace arm_compute
 

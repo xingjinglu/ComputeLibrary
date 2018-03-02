@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -24,9 +24,10 @@
 #include "arm_compute/runtime/CL/functions/CLConvolutionLayer.h"
 
 #include "arm_compute/core/PixelValue.h"
-#include "arm_compute/core/Size2D.h"
 #include "arm_compute/core/Utils.h"
 #include "arm_compute/core/Validate.h"
+#include "arm_compute/core/utils/misc/ShapeCalculator.h"
+#include "arm_compute/core/utils/quantization/AsymmHelpers.h"
 #include "arm_compute/runtime/CL/CLScheduler.h"
 
 #include <cmath>
@@ -34,227 +35,86 @@
 #include <tuple>
 
 using namespace arm_compute;
-
-CLConvolutionLayerReshapeWeights::CLConvolutionLayerReshapeWeights(std::shared_ptr<IMemoryManager> memory_manager)
-    : _memory_group(std::move(memory_manager)), _weights_reshape_kernel(), _weights_transposed_kernel(), _weights_reshaped(), _transpose1xW(false)
-{
-}
-
-void CLConvolutionLayerReshapeWeights::configure(const ICLTensor *weights, const ICLTensor *biases, ICLTensor *output, bool transpose1xW)
-{
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(weights, 1, DataType::QS8, DataType::QS16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(weights, output);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(weights, output);
-    ARM_COMPUTE_ERROR_ON(weights->info()->num_dimensions() > 4);
-
-    if(biases != nullptr)
-    {
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(weights, biases);
-        ARM_COMPUTE_ERROR_ON(biases->info()->dimension(0) != weights->info()->dimension(3));
-        ARM_COMPUTE_ERROR_ON(biases->info()->num_dimensions() > 1);
-    }
-
-    const bool _has_bias = (biases != nullptr);
-
-    _transpose1xW = transpose1xW;
-
-    if(transpose1xW)
-    {
-        // Create tensor to store the reshaped weights
-        const unsigned int mat_weights_cols = weights->info()->dimension(3);
-        const unsigned int mat_weights_rows = weights->info()->dimension(0) * weights->info()->dimension(1) * weights->info()->dimension(2) + (_has_bias ? 1 : 0);
-        TensorShape        shape_wr(mat_weights_cols, mat_weights_rows);
-        const DataType     dt                   = weights->info()->data_type();
-        const int          fixed_point_position = weights->info()->fixed_point_position();
-        TensorInfo         info_wr(shape_wr, 1, dt, fixed_point_position);
-
-        _weights_reshaped.allocator()->init(info_wr);
-        _memory_group.manage(&_weights_reshaped);
-        _weights_reshape_kernel.configure(weights, biases, &_weights_reshaped);
-        _weights_transposed_kernel.configure(&_weights_reshaped, output);
-        _weights_reshaped.allocator()->allocate();
-    }
-    else
-    {
-        _weights_reshape_kernel.configure(weights, biases, output);
-    }
-}
-
-void CLConvolutionLayerReshapeWeights::run()
-{
-    _memory_group.acquire();
-
-    cl::CommandQueue q = CLScheduler::get().queue();
-    CLScheduler::get().enqueue(_weights_reshape_kernel);
-    if(_transpose1xW)
-    {
-        CLScheduler::get().enqueue(_weights_transposed_kernel);
-    }
-
-    _memory_group.release();
-}
+using namespace arm_compute::misc::shape_calculator;
 
 CLConvolutionLayer::CLConvolutionLayer(std::shared_ptr<IMemoryManager> memory_manager)
-    : _memory_group(std::move(memory_manager)), _reshape_weights(), _input_im2col_kernel(), _input_interleave_kernel(), _mm_kernel(), _output_col2im_kernel(), _input_im2col_reshaped(),
-      _input_interleaved_reshaped(), _weights_reshaped(), _weights_transposed(), _gemm_output(), _has_bias(false), _is_fully_connected_convolution(false), _are_weights_reshaped(false)
+    : _memory_manager(std::move(memory_manager)), _function()
 {
 }
 
-void CLConvolutionLayer::configure(const ICLTensor *input, const ICLTensor *weights, const ICLTensor *biases, ICLTensor *output, const PadStrideInfo &conv_info, const WeightsInfo &weights_info)
+void CLConvolutionLayer::configure(ICLTensor *input, const ICLTensor *weights, const ICLTensor *biases, ICLTensor *output, const PadStrideInfo &conv_info, const WeightsInfo &weights_info)
 {
-    ARM_COMPUTE_ERROR_ON_DATA_TYPE_CHANNEL_NOT_IN(input, 1, DataType::QS8, DataType::QS16, DataType::F16, DataType::F32);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, weights);
-    ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, weights);
-    ARM_COMPUTE_ERROR_ON(!weights_info.are_reshaped() && weights->info()->dimension(2) != input->info()->dimension(2));
-    ARM_COMPUTE_ERROR_ON(weights->info()->num_dimensions() > 4);
+    ARM_COMPUTE_ERROR_ON_NULLPTR(input, weights, output);
+    ARM_COMPUTE_ERROR_THROW_ON(CLConvolutionLayer::validate(input->info(), weights->info(), ((biases != nullptr) ? biases->info() : nullptr), output->info(), conv_info, weights_info));
 
-    if(biases != nullptr)
+    switch(CLConvolutionLayer::get_convolution_method(input->info(), weights->info(), ((biases != nullptr) ? biases->info() : nullptr), output->info(), conv_info,
+                                                      weights_info, CLScheduler::get().target()))
     {
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_DATA_TYPES(input, biases);
-        ARM_COMPUTE_ERROR_ON_MISMATCHING_FIXED_POINT(input, biases);
-        ARM_COMPUTE_ERROR_ON(!weights_info.are_reshaped() && biases->info()->dimension(0) != weights->info()->dimension(3));
-        ARM_COMPUTE_ERROR_ON(biases->info()->num_dimensions() > 1);
-    }
-
-    const DataType dt                   = input->info()->data_type();
-    const int      fixed_point_position = input->info()->fixed_point_position();
-
-    // Set the GPU target for matrix multiply
-    _mm_kernel.set_target(CLScheduler::get().target());
-
-    _has_bias             = (biases != nullptr);
-    _are_weights_reshaped = weights_info.are_reshaped();
-
-    // Get parameters from conv_info
-    unsigned int stride_x = 0;
-    unsigned int stride_y = 0;
-    unsigned int pad_x    = 0;
-    unsigned int pad_y    = 0;
-    std::tie(stride_x, stride_y) = conv_info.stride();
-    std::tie(pad_x, pad_y)       = conv_info.pad();
-
-    // Get convolved dimensions
-    unsigned int conv_w = 0;
-    unsigned int conv_h = 0;
-
-    const unsigned int kernel_width  = (_are_weights_reshaped) ? weights_info.kernel_size().first : weights->info()->dimension(0);
-    const unsigned int kernel_height = (_are_weights_reshaped) ? weights_info.kernel_size().second : weights->info()->dimension(1);
-    std::tie(conv_w, conv_h) = scaled_dimensions(input->info()->dimension(0), input->info()->dimension(1), kernel_width, kernel_height,
-                                                 conv_info);
-
-    // Check if its a "fully connected" convolution
-    _is_fully_connected_convolution = ((conv_w == 1) && (conv_h == 1));
-
-    unsigned int mat_weights_cols = weights->info()->dimension(3);
-    unsigned int mat_weights_rows = weights->info()->dimension(0) * weights->info()->dimension(1) * weights->info()->dimension(2) + (_has_bias ? 1 : 0);
-
-    // Reshape weights if needed
-    if(_are_weights_reshaped)
-    {
-        mat_weights_cols                         = weights_info.num_kernels();
-        const unsigned int quarter_reshaped_cols = weights->info()->dimension(0) / 4;
-        mat_weights_rows                         = (_has_bias ? 1 + quarter_reshaped_cols : quarter_reshaped_cols);
-    }
-    else
-    {
-        if(_is_fully_connected_convolution)
+        case ConvolutionMethod::DIRECT:
         {
-            // Create tensor to store the reshaped weights
-            TensorShape shape_wr(mat_weights_cols, mat_weights_rows);
-            TensorInfo  info_wr(shape_wr, 1, dt, fixed_point_position);
-            _weights_reshaped.allocator()->init(info_wr);
-            _reshape_weights.configure(weights, biases, &_weights_reshaped, false /* 1xW transpose */);
+            auto f = arm_compute::support::cpp14::make_unique<CLDirectConvolutionLayer>();
+            f->configure(input, weights, biases, output, conv_info);
+            _function = std::move(f);
+            break;
         }
-        else
+        case ConvolutionMethod::GEMM:
         {
-            // Create tensor to store transposed weights
-            const float transpose_width = 16.0f / input->info()->element_size();
-            TensorShape shape_wt(mat_weights_rows * static_cast<unsigned int>(transpose_width), static_cast<unsigned int>(std::ceil(mat_weights_cols / transpose_width)));
-            TensorInfo  info_wt(shape_wt, 1, dt, fixed_point_position);
-            _weights_reshaped.allocator()->init(info_wt);
-            _reshape_weights.configure(weights, biases, &_weights_reshaped, true /* 1xW transpose */);
+            auto f = arm_compute::support::cpp14::make_unique<CLGEMMConvolutionLayer>(_memory_manager);
+            f->configure(input, weights, biases, output, conv_info, weights_info);
+            _function = std::move(f);
+            break;
         }
-        weights = &_weights_reshaped;
+        default:
+            ARM_COMPUTE_ERROR("Not supported.");
+            break;
     }
+}
 
-    // Create tensor to store im2col reshaped inputs
-    const unsigned int mat_input_cols = mat_weights_rows;
-    const unsigned int mat_input_rows = conv_w * conv_h;
-    TensorShape        shape_im2col   = input->info()->tensor_shape();
-    shape_im2col.set(0, mat_input_cols);
-    shape_im2col.set(1, mat_input_rows);
-    shape_im2col.set(2, 1);
-    _input_im2col_reshaped.allocator()->init(TensorInfo(shape_im2col, 1, dt, fixed_point_position));
-    _memory_group.manage(&_input_im2col_reshaped);
+Status CLConvolutionLayer::validate(const ITensorInfo *input, const ITensorInfo *weights, const ITensorInfo *biases, const ITensorInfo *output, const PadStrideInfo &conv_info,
+                                    const WeightsInfo &weights_info)
+{
+    ARM_COMPUTE_RETURN_ERROR_ON_NULLPTR(input, weights, output);
 
-    // Create tensor (interleave) to prepare input tensor for GEMM
-    if(!_is_fully_connected_convolution)
+    //Configure if the parameters match the direct convolution or the gemm-based
+    const GPUTarget gpu_target = CLScheduler::get().target();
+
+    switch(CLConvolutionLayer::get_convolution_method(input, weights, biases, output, conv_info, weights_info, gpu_target))
     {
-        TensorShape shape_interleaved = shape_im2col;
-        shape_interleaved.set(0, shape_interleaved.x() * 4);
-        shape_interleaved.set(1, std::ceil(shape_interleaved.y() / 4.f));
-        _input_interleaved_reshaped.allocator()->init(TensorInfo(shape_interleaved, 1, dt, fixed_point_position));
-        _memory_group.manage(&_input_interleaved_reshaped);
+        case ConvolutionMethod::DIRECT:
+        {
+            // Validate direct convolution layer
+            CLDirectConvolutionLayer::validate(input, weights, biases, output, conv_info);
+            break;
+        }
+        case ConvolutionMethod::GEMM:
+        {
+            // Validate gemm-based convolution layer
+            CLGEMMConvolutionLayer::validate(input, weights, biases, output, conv_info, weights_info);
+            break;
+        }
+        default:
+            ARM_COMPUTE_ERROR("Not supported.");
+            break;
     }
 
-    // Create GEMM output tensor
-    TensorShape shape_gemm = _input_im2col_reshaped.info()->tensor_shape();
-    shape_gemm.set(0, mat_weights_cols);
-    shape_gemm.set(1, mat_input_rows);
-    _gemm_output.allocator()->init(TensorInfo(shape_gemm, 1, dt, fixed_point_position));
-    _memory_group.manage(&_gemm_output);
+    return Status{};
+}
 
-    // Configure kernels
-    _input_im2col_kernel.configure(input, &_input_im2col_reshaped, Size2D(kernel_width, kernel_height), conv_info, _has_bias);
+ConvolutionMethod CLConvolutionLayer::get_convolution_method(const ITensorInfo *input, const ITensorInfo *weights, const ITensorInfo *biases, const ITensorInfo *output, const PadStrideInfo &conv_info,
+                                                             const WeightsInfo &weights_info, const GPUTarget gpu_target)
+{
+    ARM_COMPUTE_UNUSED(input);
+    ARM_COMPUTE_UNUSED(weights);
+    ARM_COMPUTE_UNUSED(biases);
+    ARM_COMPUTE_UNUSED(output);
+    ARM_COMPUTE_UNUSED(conv_info);
+    ARM_COMPUTE_UNUSED(weights_info);
+    ARM_COMPUTE_UNUSED(gpu_target);
 
-    // Configure matrix multiply
-    if(_is_fully_connected_convolution)
-    {
-        // The matrix A and Matrix B have not been reshaped
-        _mm_kernel.configure(&_input_im2col_reshaped, weights, &_gemm_output, 1.0f, false);
-    }
-    else
-    {
-        _input_interleave_kernel.configure(&_input_im2col_reshaped, &_input_interleaved_reshaped);
-        _mm_kernel.configure(&_input_interleaved_reshaped, weights, &_gemm_output, 1.0f);
-        _input_interleaved_reshaped.allocator()->allocate();
-    }
-    _input_im2col_reshaped.allocator()->allocate();
-    _output_col2im_kernel.configure(&_gemm_output, output, std::make_pair(conv_w, conv_h));
-    _gemm_output.allocator()->allocate();
-
-    ARM_COMPUTE_ERROR_ON_MSG((output->info()->dimension(0) != conv_w) || (output->info()->dimension(1) != conv_h), "Output shape does not match the expected one");
-
-    // Allocate intermediate tensor
-    if(!_are_weights_reshaped)
-    {
-        _weights_reshaped.allocator()->allocate();
-    }
+    return ConvolutionMethod::GEMM;
 }
 
 void CLConvolutionLayer::run()
 {
-    // Run weights reshaping (Runs once for every configure)
-    if(!_are_weights_reshaped)
-    {
-        _are_weights_reshaped = true;
-        _reshape_weights.run();
-    }
-
-    _memory_group.acquire();
-
-    // Run input reshaping
-    CLScheduler::get().enqueue(_input_im2col_kernel);
-    if(!_is_fully_connected_convolution)
-    {
-        CLScheduler::get().enqueue(_input_interleave_kernel);
-    }
-
-    // Runs matrix multiply on reshaped matrices
-    CLScheduler::get().enqueue(_mm_kernel);
-
-    // Reshape output matrix
-    CLScheduler::get().enqueue(_output_col2im_kernel, false);
-
-    _memory_group.release();
+    _function->run();
 }

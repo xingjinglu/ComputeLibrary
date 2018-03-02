@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited.
+ * Copyright (c) 2017-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -51,13 +51,14 @@ public:
     /** Set the input and output of the kernel.
      *
      * @param[in]  input       The input tensor to convert. 3 lower dimensions represent a single input [width, height, IFM],
-     *                         while every optional dimension from 4 and above represent a batch of inputs. Data types supported: F32
+     *                         while every optional dimension from 4 and above represent a batch of inputs. Data types supported: QASYMM8/F32
      * @param[out] output      The output tensor. First 3 lower dimensions represent a transform of each 3D input,
      *                         while every dimension above 3 represents a batch. Data types supported: Same as @p input
      * @param[in]  kernel_dims The kernel dimensions (width and height).
      * @param[in]  conv_info   Contains padding and stride information described in @ref PadStrideInfo.
+     * @param[in]  has_bias    Boolean that specifies if the depthwise convolution has bias.
      */
-    void configure(const ICLTensor *input, ICLTensor *output, const Size2D &kernel_dims, const PadStrideInfo &conv_info);
+    void configure(const ICLTensor *input, ICLTensor *output, const Size2D &kernel_dims, const PadStrideInfo &conv_info, bool has_bias = false);
 
     // Inherited methods overridden:
     void run(const Window &window, cl::CommandQueue &queue) override;

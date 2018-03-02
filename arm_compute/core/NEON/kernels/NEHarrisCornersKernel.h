@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -84,6 +84,10 @@ template <int32_t block_size>
 class NEHarrisScoreKernel : public INEHarrisScoreKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEHarrisScoreKernel";
+    }
     /** Default constructor */
     NEHarrisScoreKernel();
     // Inherited methods overridden:
@@ -99,12 +103,16 @@ private:
     HarrisScoreFunction *_func;
 };
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 /** Interface for the accumulate Weighted kernel using F16 */
 template <int32_t block_size>
 class NEHarrisScoreFP16Kernel : public INEHarrisScoreKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEHarrisScoreFP16Kernel";
+    }
     /** Default constructor */
     NEHarrisScoreFP16Kernel();
     // Inherited methods overridden:
@@ -118,9 +126,9 @@ private:
     /** Harris Score function to use for the particular image types passed to configure() */
     HarrisScoreFunction *_func;
 };
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 template <int32_t block_size>
 using NEHarrisScoreFP16Kernel = NEHarrisScoreKernel<block_size>;
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 } // namespace arm_compute
 #endif /* __ARM_COMPUTE_NEHARRISCORNERSKERNEL_H__ */

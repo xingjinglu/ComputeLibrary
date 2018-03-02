@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017 ARM Limited.
+ * Copyright (c) 2016-2018 ARM Limited.
  *
  * SPDX-License-Identifier: MIT
  *
@@ -36,6 +36,10 @@ template <MagnitudeType mag_type, PhaseType phase_type>
 class NEMagnitudePhaseKernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEMagnitudePhaseKernel";
+    }
     /** Default constructor */
     NEMagnitudePhaseKernel();
     /** Destructor */
@@ -66,17 +70,17 @@ public:
 private:
     /** Function to perform magnitude on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void magnitude(const Window &window);
     /** Function to perform phase on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void phase(const Window &window);
     /** Function to perform magnitude and phase on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void magnitude_phase(const Window &window);
 
@@ -94,12 +98,16 @@ private:
     ITensor                  *_phase;     /**< Output - Phase */
 };
 
-#ifdef ARM_COMPUTE_ENABLE_FP16
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 /** Template interface for the kernel to compute magnitude and phase */
 template <MagnitudeType mag_type, PhaseType phase_type>
 class NEMagnitudePhaseFP16Kernel : public INEKernel
 {
 public:
+    const char *name() const override
+    {
+        return "NEMagnitudePhaseFP16Kernel";
+    }
     /** Default constructor */
     NEMagnitudePhaseFP16Kernel();
     /** Destructor */
@@ -130,17 +138,17 @@ public:
 private:
     /** Function to perform magnitude on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void magnitude(const Window &window);
     /** Function to perform phase on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void phase(const Window &window);
     /** Function to perform magnitude and phase on the given window
      *
-     *  @param[in] window Region on which to execute the kernel
+     * @param[in] window Region on which to execute the kernel
      */
     void magnitude_phase(const Window &window);
 
@@ -156,9 +164,9 @@ private:
     ITensor                  *_magnitude; /**< Output - Magnitude */
     ITensor                  *_phase;     /**< Output - Phase */
 };
-#else  /* ARM_COMPUTE_ENABLE_FP16 */
+#else  /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 template <MagnitudeType mag_type, PhaseType phase_type>
 using NEMagnitudePhaseFP16Kernel = NEMagnitudePhaseKernel<mag_type, phase_type>;
-#endif /* ARM_COMPUTE_ENABLE_FP16 */
+#endif /* __ARM_FEATURE_FP16_VECTOR_ARITHMETIC */
 } // namespace arm_compute
 #endif /* __ARM_COMPUTE_NEMAGNITUDEPHASEKERNEL_H__ */
